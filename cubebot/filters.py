@@ -1,0 +1,62 @@
+import config
+from telegram.ext import BaseFilter
+from enum import Enum, auto
+from model import session, Player
+from functools import wraps
+
+class GameStates(Enum):
+    INIT = auto()
+    PLAY = auto()
+    END = auto()
+    
+class UserType(Enum):
+    ADMIN = auto()
+    PLAYER = auto()
+
+class SignConv(Enum):
+    CHOOSING = auto()
+    CONFIRM = auto()
+    SENDING = auto()
+
+class DeckConv(Enum):
+    ACTION = auto()
+    CANCEL = auto()
+    NAME = auto()
+    DESCR = auto()
+    CARDS = auto()
+    NOTE = auto()
+    STATS = auto()
+    TOKEN = auto()
+
+class WinConv(Enum):
+    CHOOSING = auto()
+    DESCRIPT = auto()
+    
+##def admin(func):
+##    @wraps(func)
+##    def wrapped(self, update, context, *args, **kwargs):
+##        user_id = update.effective_user.id
+##        if user_id != config.admin_id:
+##            print(f"Unauthorized access denied for {user}.")
+##            return
+##        return func(self, update, context, *args, **kwargs)
+##    return wrapped
+
+def restrict(user_type):
+
+    def decorator(func):
+        @wraps(func)
+        def command_func(self, update, context, *args, **kwargs):
+            users_id = None
+            if user_type is UserType.ADMIN:
+                users_id = [id for id, in session.query(Player.id).filter(Player.is_admin==True)]
+            elif user_type is UserType.PLAYER:
+                users_id = [id for id, in session.query(Player.id)]
+            if not update.effective_user.id in users_id:
+                print(f"Unauthorized access denied for {user}.")
+                return
+            return func(self, update, context, *args, **kwargs)
+        return command_func
+    
+    return decorator
+

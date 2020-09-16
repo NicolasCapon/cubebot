@@ -1,0 +1,7 @@
+/init with param to choose cube
+(upload decks on cubecobra)
+Tester le module nfcpy
+
+A tester :
+Envoyer les notes dans le chat (cf audio.audio.scan fonction)
+add write data to nfc tag (utils)

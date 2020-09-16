@@ -1,0 +1,16 @@
+import pathlib
+import os
+import logging
+
+src_dir = pathlib.Path(__file__).parent.absolute()
+project_dir = pathlib.Path(__file__).parent.parent.absolute()
+db = f"sqlite:///{os.path.join(src_dir, 'db', 'cube.db')}"
+
+log_file = os.path.join(src_dir, "log","console.log")
+log_level = logging.INFO
+telegram_token = 
+
+admin_id = 
+chat_id = 
+password = 
+share_url = 
