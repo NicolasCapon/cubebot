@@ -15,9 +15,9 @@ from bs4 import BeautifulSoup
 from pn532 import PN532_SPI
 
 def create_cube():
-    # session.query(Game).delete()
     c = Cube(name="Multiplayer Yolo Cube",
              cubecobra_id = "5dd42bd004af383a21c92eb9")
+             #last_update=datetime.strptime("2020-04-01 13:58:21","%Y-%m-%d %H:%M:%S"))
     logging.info(f"Cube created: {c}")
     p = Player(id=config.admin_id, name="Nicolas", is_admin=True)
     logging.info(f"Player added: {p}")
@@ -30,8 +30,10 @@ def create_cube():
     return c
     
 def import_cubecobra(cube):
-    cards = get_cube_list(cube, from_file=False)
-    for card in tqdm(cards, total=len(cards)):
+    cards = get_cube_list(cube, from_file=False) #True if test on update
+    cards = tqdm(cards, total=len(cards))
+    cards.set_description(f"Cube creation")
+    for card in cards:
         c = Card(name=card["Name"],
                  set_code=card["Set"],
                  cmc=card["CMC"],
@@ -110,6 +112,7 @@ def write_string_to_tag(data, pn532):
     b = data.encode()
     chunks = [b[i:i+4] for i in range(0, len(b), 4)]
     for i, chunk in enumerate(chunks):
+        print(chunk)
         result = pn532.ntag2xx_write_block(i, chunk)
         print(f"Writing data: {result}")
     
@@ -119,7 +122,7 @@ def quick_scan(cube):
     cards = session.query(CubeList, Card).join(Card).filter(CubeList.cube_id == cube.id).all()
     uids = []
     for cube_card, card in cards:
-        logging.info(name)
+        logging.info(card.name)
         loop = True
         while loop:
             uid = pn532.read_passive_target(timeout=0.1)
@@ -127,7 +130,8 @@ def quick_scan(cube):
                 continue
             uids.append(uid)
             cube_card.uid = uid
-            write_string_to_tag(f"https://scryfall.com/card/{card.scryfall_id}", pn532)
+            # write_string_to_tag(f"https://scryfall.com/card/{card.scryfall_id}", pn532)
+            session.commit()
             loop = False
             
     
@@ -198,13 +202,11 @@ def update_cube(cube):
         i += 1
     
     logging.info(f"{len(updates_to_proceed)} update(s) found.")
-    updates_to_proceed = tqdm(reversed(updates_to_proceed), total=len(updates_to_proceed))
-    updates_to_proceed.set_description("Total Updates")
-    for i, u in enumerate(updates_to_proceed):
-        logging.info(f"------Update du {u.published_parsed} ------")
+    for i, u in enumerate(reversed(updates_to_proceed)):
+        # logging.info(f"------Update du {u.published_parsed} ------")
         changes = str(u.summary).split("<br/>")
         changes = tqdm(changes, total=len(changes))
-        changes.set_description(f"{u.title}")
+        changes.set_description(f"[{i+1}/{len(updates_to_proceed)}]{u.title}")
         for change in changes:
             c = BeautifulSoup(change, features="html.parser")
             cards = c.find_all("a")
@@ -212,38 +214,40 @@ def update_cube(cube):
                 # Update card
                 old_card_name = cards[0].string
                 new_card_name = cards[1].string
-                old_card = session.query(Card).join(CubeList).filter(Card.name == old_card_name,
+                card_to_update = session.query(CubeList).join(Card).filter(Card.name == old_card_name,
                                                                      CubeList.cube_id == cube.id).one()
+                # card_to_update = session.query(CubeList).filter(CubeList.card_id == old_card.id,
+                #                                                 CubeList.cube_id == cube.id).one()
                 new_card = Card(name=new_card_name)
-                card_to_update = session.query(CubeList).filter(CubeList.card_id == old_card.id,
-                                                                CubeList.cube_id == cube.id).one()
+                session.add(new_card)
+                session.flush()
                 card_to_update.card_id = new_card.id
                 card_to_update.signature = None
-                logging.info(f"{old_card_name} est remplacé par {new_card_name}.")
+                # logging.info(f"{old_card_name} est remplacé par {new_card_name}.")
             elif c.span and c.span.string == "+" and len(cards) == 1:
-                # Add card
+                # Add card 
                 new_card_name = cards[0].string
                 cube.append(Card(name=new_card_name))
-                logging.info(f"{new_card_name} est ajouté.")
+                # logging.info(f"{new_card_name} est ajouté.")
             elif c.span and c.span.string == "-" and len(cards) == 1:
                 # Remove card
                 old_card_name = cards[0].string
                 session.query(CubeList).join(Card).filter(Card.name == old_card_name,
                                                           CubeList.cube_id == cube.id).delete()
-                logging.info(f"{old_card_name} est supprimé.")
+                # logging.info(f"{old_card_name} est supprimé.")
         if i == len(updates_to_proceed)-1:
             # On last update, we update cards data based on csv
-            logging.info(">>> Last Update, load csv to fill missing cards data...")
+            # logging.info(">>>Load csv and crawl scryfall to fill missing cards data...")
             cube.last_update = datetime.fromtimestamp(mktime(u.published_parsed))
             cubelist = get_cube_list(cube)
             cubelist_db = session.query(Card).join(CubeList).filter(Card.set_code==None,
                                                                     CubeList.cube_id == cube.id).all()
             cubelist_db = tqdm(cubelist_db, total=len(cubelist_db))
-            cubelist_db.set_description(f"{u.title}")
+            cubelist_db.set_description(f"Update cards info")
             for card_db in cubelist_db:
                 for card in cubelist:
                     if card_db.name == card["Name"]:
-                        logging.info(f"Update data for {card_db.name}.")
+                        # logging.info(f"Update data for {card_db.name}.")
                         card_db.set_code = card["Set"]
                         card_db.cmc=card["CMC"]
                         card_db.color=card["Color"]
@@ -252,7 +256,7 @@ def update_cube(cube):
                         card_db.tags=card["Tags"]
                         add_scryfall_infos(card_db)
                         break
-            logging.info("Commit")
+            logging.info("Update Complete")
             session.commit()
     return len(updates_to_proceed)
 
@@ -266,11 +270,17 @@ if __name__ == "__main__":
                        # filename=config.log_file,
                         level=config.log_level)
     cube = session.query(Cube).filter(Cube.id==1).first()
-    # quick_scan(cube)
-    a = "https://scryfall.com/card/894321".encode()
-    print(a)
-    print(len(a))
+    update_cube(cube)
+    test_scan(cube)
+    """TODO: test if update is good on cubelist
+    update triome
+    load uid to cubelist"""
     # cube = create_cube()
+    # c = Card(name="test")
+    # print(c)
+    # cube.cards.append(c)
+    # session.flush()
+    # print(c)
     # update_cube(cube)
     # cube = scan_card_for_DB(cube)
     # test_scan(cube)

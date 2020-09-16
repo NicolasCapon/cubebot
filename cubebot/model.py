@@ -12,11 +12,11 @@ class Card(Base):
 
     __tablename__ = 'card'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String)
     set_code = Column(String)
     cmc = Column(Integer)
-    color = Column(String) # Color in cube
+    color = Column(String)
     type_line = Column(String)
     status = Column(String)
     tags = Column(String)
