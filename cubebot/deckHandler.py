@@ -24,7 +24,7 @@ class DeckHandler:
         self.cubelist = session.query(CubeList).filter(CubeList.cube_id == game.cube.id,
                                                        CubeList.uid != None).all()
         self.current_user = None
-        self.deck, self.scanned, self.user_scanned = [], [], []
+        self.deck, self.scanned, self.user_scanned = None, [], []
         self.loop = False # Scan loop
         # Scanning device config
         self.pn532 = PN532_SPI(debug=False, reset=20, cs=4)
@@ -34,15 +34,21 @@ class DeckHandler:
         self.scan_handler = CommandHandler("deck", self.new_deck)
         dispatcher.add_handler(self.scan_handler)
         self.scan_buttons_handler = CallbackQueryHandler(self.scan_buttons)
-        # Keyboards
-        keyboard = [[InlineKeyboardButton("Corriger", callback_data='1'),
-                     InlineKeyboardButton("Voir stats", callback_data='2'),
-                     InlineKeyboardButton("Soumettre", callback_data='3')]]
-        self.reply_markup_scan = InlineKeyboardMarkup(keyboard)
         # Conversation Handler for deck title and description
         self.deck_conv_handler = self.deck_conv_handler()
         dispatcher.add_handler(self.deck_conv_handler)
     
+    def get_scan_keyboard(self, count=0):
+        if count:
+            keyboard = [[InlineKeyboardButton("Corriger", callback_data='1'),
+                        InlineKeyboardButton("Stats", callback_data='2'),
+                        InlineKeyboardButton("Annuler", callback_data='0')],
+                        [InlineKeyboardButton("Soumettre Deck", callback_data='3')]]
+        else:
+            keyboard = [[InlineKeyboardButton("Annuler", callback_data='0'),
+                        InlineKeyboardButton("Soumettre", callback_data='3')]]
+        return keyboard
+        
     def get_deck_keyboard(self, stat=False):
         """Get Keyboard depending of game and dialog state
         stat avoid clicking multiple times on stat button causing a bug
@@ -114,7 +120,10 @@ class DeckHandler:
         self.current_user = session.query(Player).filter(Player.id==user.id).first()
         self.deck = Deck(player=self.current_user, name=f"Deck de {self.current_user.name}", game=self.game)
         text = f"Yo {self.current_user.name}, commence à scanner les cartes que tu as drafté !"
-        message = context.bot.send_message(chat_id=user.id, text=text, reply_markup=self.reply_markup_scan)
+        reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
+        message = context.bot.send_message(chat_id=user.id,
+                                           text=text,
+                                           reply_markup=reply_markup)
         context.dispatcher.add_handler(self.scan_buttons_handler)
         
         # Start scanning
@@ -129,52 +138,65 @@ class DeckHandler:
             card = next((c.card for c in self.cubelist if c.uid == uid), None)
             if not card:
                 # unknown card detected
+                reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
                 context.bot.editMessageText(chat_id=user.id,
                                             message_id=message.message_id,
                                             text="Carte non reconnue, continue à scanner",
-                                            reply_markup=self.reply_markup_scan)
+                                            reply_markup=reply_markup)
             # Check if card is already scanned
             # TODO: verify if card is not scanned in another deck
             elif not card in self.deck.cards:
                 self.deck.cards.append(card)
-                edit = "Continue à scanner...(/cancel pour quitter)\nCartes scannées:"
+                edit = f"Continue à scanner...\nCartes scannées (len(self.deck.cards)):"
                 for card in self.deck.cards:
                     edit += f"\n- {card.name}"
+                reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
                 context.bot.editMessageText(chat_id=user.id,
                                             message_id=message.message_id,
                                             text=edit,
-                                            reply_markup=self.reply_markup_scan)
+                                            reply_markup=reply_markup)
                                
 
     def scan_buttons(self, update, context):
-        """ InlineKeyboardMarkup response 3 types
+        """ InlineKeyboardMarkup response 4 types
+        - Cancel conv
         - Remove last scanned card
         - See stats about your scanned deck
         - Submit and save scanned cards
         """
         query = update.callback_query
+        if query.data == "0":
+            # Cancel is called
+            text = "Scan annulé, ton deck n'a pas été enregistré.\n"\
+                   "Pour recommencer: /deck"
+            query.edit_message_text(text=text,
+                                    parse_mode="HTML")
+            self.reset_state(context.dispatcher)
+            
         if query.data == "1" and self.deck.cards:
             # Remove last element of decklist
             del self.deck.cards[-1]
-            edit = "Cartes scannées:"
+            edit = f"Cartes scannées ({len(self.deck.cards)}):"
             for card in self.deck.cards:
                 edit += f"\n- {card.name}"
+            reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
             query.edit_message_text(text=edit,
-                                    reply_markup=self.reply_markup_scan)
+                                    reply_markup=reply_markup)
 
         elif query.data == "2":
             # Send stats
             deck = "1x "+"\n1x ".join([c.name for c in self.deck.cards])
             deck_url = deckstat.get_deck_url(deck=deck, deck_name=self.deck.name)                
             text = f"Voici ton pool de carte : <a href='{deck_url}'>Voir mon deck</a>."
+            reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
             query.edit_message_text(text=edit,
-                                    reply_markup=self.reply_markup_scan,
+                                    reply_markup=reply_markup,
                                     parse_mode="HTML")
-        
+
         elif query.data == "3":
             # Submit decklist
-            text = f"J'ai bien sauvegardé ton deck, pour le modifier "\
-                     "ou consulter des infos le concernant: /mydeck"
+            text = "J'ai bien sauvegardé ton deck, pour le modifier "\
+                   "ou consulter des infos le concernant: /mydeck"
             query.edit_message_text(text=text,
                                     parse_mode="HTML")
             context.user_data["deck"] = self.deck
@@ -211,6 +233,7 @@ class DeckHandler:
         - Set deck name (default Deck_de_Player)
         - Set deck description
         - Set note for a card (to be revealed during the game) only available before the game start
+        - See tokens related to your deck
         - Add or remove cards
         - See stats on deckstat.net
         This handler is available once you have created a deck and until end of the game
@@ -284,9 +307,13 @@ class DeckHandler:
         elif query.data == DeckConv.TOKEN.name:
             deck = session.query(Deck).filter(Deck.id==context.user_data["deck"].id).first()
             text = "Voici la liste des tokens dont tu auras besoin:\n"
+            count = 0
             for card in deck.cards:
                 for token in card.tokens:
+                    count += 1
                     text+= f"- <a href='{token.image_url}'>{token.power}/{token.toughness} {token.color} {token.name}</a>\n"
+            if not count:
+                text = "Ton deck n'a pas besoin de tokens"
             query.edit_message_text(text=text,
                                     reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),
                                     disable_web_page_preview=True,
@@ -331,7 +358,7 @@ class DeckHandler:
                 errors.append((cardname, "pas de carte trouvée"))
                 continue
             if card in context.user_data['deck'].cards:
-                session.query(DeckList).filter(DeckList.card_id == card.id, DeckList.deck_id == context.user_data["deck"].id).first().note = answer
+                session.query(DeckList).filter(DeckList.card_id == card.id, DeckList.deck_id == context.user_data["deck"].id).first().note = note
             else:
                 errors.append((cardname, "carte absente du deck"))
         session.commit()
@@ -395,7 +422,7 @@ class DeckHandler:
         # dispatcher.remove_handler(self.scan_handler)
         dispatcher.remove_handler(self.scan_buttons_handler)
         self.loop = False
-        self.deck = []
+        self.deck = None
         self.current_user = None
 
     def stop_deck_preparation(self, context):

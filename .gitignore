@@ -15,7 +15,3 @@ pyvenv.cfg
 cubebot/__pycache__/
 cubebot/pn532/__pycache__/
 cubebot/config.py
-
-# untrack changes from :
-# - mtg-telegram-bot/spoilers/spoilers.json
-# - mtg-telegram-bot/src/config.py

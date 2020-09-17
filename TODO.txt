@@ -1,7 +1,7 @@
 /init with param to choose cube
 (upload decks on cubecobra)
-Tester le module nfcpy
+vérifier cubehandler au niveau des messages d'update envoyé (notes)
+notes ne doit prendre que le string entre parentheses
 
-A tester :
-Envoyer les notes dans le chat (cf audio.audio.scan fonction)
+Tester le module nfcpy
 add write data to nfc tag (utils)
