@@ -11,7 +11,10 @@ def get_deck_url(deck):
     #Prepare request
     url = 'https://deckstats.net/index.php'
     headers = {"Content-type":"application/x-www-form-urlencoded"}
-    decklist = "1x "+"\n1x ".join([c.name for c in deck.cards])
+    decklist = ""
+    for i, deck_card in enumerate(deck.cards):
+        br = "\n"
+        decklist += f"{deck_card.amount}x {deck_card.card.name}{br if i<len(deck.cards)-1 else ''}"
     data = {"deck": decklist, "decktitle":deck.name}
     # Request and handle error status
     r = requests.post(url, data=data, headers=headers)

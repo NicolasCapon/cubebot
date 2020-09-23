@@ -13,6 +13,7 @@ from time import mktime
 from datetime import datetime
 from bs4 import BeautifulSoup
 from pn532 import PN532_SPI
+import deckstat_interface as deckstat
 
 def create_cube():
     c = Cube(name="Multiplayer Yolo Cube",
@@ -223,18 +224,18 @@ def update_cube(cube):
                 session.flush()
                 card_to_update.card_id = new_card.id
                 card_to_update.signature = None
-                # logging.info(f"{old_card_name} est remplacé par {new_card_name}.")
+                logging.info(f"~[{old_card_name} → {new_card_name}].")
             elif c.span and c.span.string == "+" and len(cards) == 1:
                 # Add card 
                 new_card_name = cards[0].string
                 cube.append(Card(name=new_card_name))
-                # logging.info(f"{new_card_name} est ajouté.")
+                logging.info(f"+[{new_card_name}]")
             elif c.span and c.span.string == "-" and len(cards) == 1:
                 # Remove card
                 old_card_name = cards[0].string
                 session.query(CubeList).join(Card).filter(Card.name == old_card_name,
                                                           CubeList.cube_id == cube.id).delete()
-                # logging.info(f"{old_card_name} est supprimé.")
+                logging.info(f"-[{old_card_name}]")
         if i == len(updates_to_proceed)-1:
             # On last update, we update cards data based on csv
             # logging.info(">>>Load csv and crawl scryfall to fill missing cards data...")
@@ -257,9 +258,10 @@ def update_cube(cube):
                         add_scryfall_infos(card_db)
                         break
             logging.info("Update Complete")
+            # Add yes no option / telegram handler
             session.commit()
     return len(updates_to_proceed)
-
+    
 
 if __name__ == "__main__":
     """To test update :
@@ -270,37 +272,30 @@ if __name__ == "__main__":
                        # filename=config.log_file,
                         level=config.log_level)
     cube = session.query(Cube).filter(Cube.id==1).first()
-    update_cube(cube)
-    test_scan(cube)
-    """TODO: test if update is good on cubelist
-    update triome
-    load uid to cubelist"""
+    card = session.query(Card).filter(Card.name == "Island").first()
+    card2 = session.query(Card).filter(Card.name == "Snap").first()
+    deck = session.query(Deck).filter(Deck.id == 2).first()
+    print(card)
+    deck.add_card(card, 10)
+    deck.add_card(card2, 3)
+    print(deckstat.get_deck_url(deck))
+    # session.commit()
+    print(deck)
+    print(deck.cards)
+    
+    # cube.last_update = datetime.strptime("2020-09-15 13:58:21","%Y-%m-%d %H:%M:%S")
+    # update_cube(cube)
+    """To delete deck and his DeckList:
+       deck = db.session.query(Deck).get(1)
+       deck.cards = []
+       session.delete(deck)
+       db.session.commit()
+    """
+    # import audio
+    # audio.audio_scan_test(cube)
     # cube = create_cube()
-    # c = Card(name="test")
-    # print(c)
-    # cube.cards.append(c)
-    # session.flush()
-    # print(c)
     # update_cube(cube)
     # cube = scan_card_for_DB(cube)
     # test_scan(cube)
-    
-##    g = Game()
-##    cube.games.append(g)
-##    d = Deck(name="deckTest")
-##    g.decks.append(d)
-##    c1 = Card(name="Snap")
-##    d.cards.append(c1)
-##    c2 = Card(name="Test")
-##    d.cards.append(c2)
-##    d.cards.append(c2)
-##    card = session.query(DeckList).join(Card).filter(Card.name=="Test").first()
-
-
-    # logging.info(card.card in d.cards)
-    # d.cards.remove(card.card)
-    # logging.info(d.cards)
-    # logging.info(session.delete(card))
-    # logging.info(session.query(DeckList).filter(Deck.id==d.id).all())
     
     

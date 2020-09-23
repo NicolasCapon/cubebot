@@ -201,7 +201,7 @@ class CubeHandler():
         c = session.query(CubeList).filter(CubeList.card_id==card_id, CubeList.cube_id==self.cube.id).first()
         c.signature = f"{self.cube.id}_{card_id}{file_extension}"
         session.commit()
-        logging.info(f"{c.name} signed with {c.signature}")
+        logging.info(f"{c} signed with {c.signature}")
         text = "J'ai bien récupéré ton fichier audio. Ta carte est desormais signée."
         update.message.reply_text(text=text)
         return ConversationHandler.END

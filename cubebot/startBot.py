@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 # Set up basic logging
 import logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                   # filename=config.log_file,
+                    filename=config.log_file,
                     level=config.log_level)
 
 def main():
@@ -89,9 +89,7 @@ def send_help(update, context):
                 f"/win - stop game\n"
 
     text += f"/deck - start scanning\n"\
-            f"/mydeck - edit your deck\n"\
-            f"/sign - sign a card\n"\
-            f"/cancel - quit bot conv\n"
+            f"/mydeck - edit your deck\n"
 
     if update.effective_user.id == config.admin_id:
         context.bot.send_message(update.effective_user.id, text=text)

@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Binary, Boolean, DateTime, create_engine
 from sqlalchemy.orm import sessionmaker, relationship, backref
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.sql.schema import ForeignKey
 
 engine = create_engine(config.db, connect_args={'check_same_thread': False})
@@ -90,8 +91,8 @@ class CubeList(Base):
     signature = Column(String)
     uid = Column(Binary)
 
-    cube = relationship(Cube)#, backref=backref("cube_assoc"))
-    card = relationship(Card)#, backref=backref("card_assoc"))
+    cube = relationship(Cube)
+    card = relationship(Card)
 
     def __repr__(self):
         return f"<CubeList(cube_id={self.cube_id}, card_id={self.card_id}, "\
@@ -149,10 +150,32 @@ class Deck(Base):
     game_id = Column(Integer, ForeignKey("game.id"))
     game = relationship("Game", back_populates="decks")
 
-    cards = relationship("Card", secondary="decklist")
-
+    cards = relationship("DeckList")
+    
     def set_is_winner(self, is_winner):
         self.is_winner = is_winner
+    
+    @hybrid_method
+    def add_card(self, card, amount=1):
+        for deck_card in self.cards:
+            if card.id == deck_card.card_id:
+                deck_card.amount += amount
+                return True
+        
+        self.cards.append(DeckList(deck=self, card=card, amount=amount))
+        return True
+    
+    @hybrid_method
+    def remove_card(self, card, amount=1):
+        for deck_card in self.cards:
+            if card.id == deck_card.card_id:
+                if amount >= deck_card.amount:
+                    # If we want to remove more than existing, remove card
+                    self.cards.remove(deck_card)
+                else:
+                    deck_card.amount -= amount
+                return True
+        return False
 
     def __repr__(self):
         return f"<Deck(id={self.id}, is_winner={self.is_winner}, "\
@@ -180,7 +203,7 @@ class DeckList(Base):
         self.amount = amount
 
     def __repr__(self):
-        return f"<CubeList(deck_id={self.deck_id}, card_id={self.card_id}, "\
+        return f"<DeckList(deck_id={self.deck_id}, card_id={self.card_id}, "\
                f"amount={self.amount}, note={self.note})>"
 
 Base.metadata.create_all(engine)

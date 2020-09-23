@@ -25,8 +25,11 @@ class DeckConv(Enum):
     DESCR = auto()
     CARDS = auto()
     NOTE = auto()
-    STATS = auto()
     TOKEN = auto()
+    SIGN = auto()
+    CHOOSING = auto() # SIGN
+    CONFIRM = auto() # SIGN
+    SENDING = auto() # SIGN
 
 class WinConv(Enum):
     CHOOSING = auto()
@@ -49,11 +52,11 @@ def restrict(user_type):
         def command_func(self, update, context, *args, **kwargs):
             users_id = None
             if user_type is UserType.ADMIN:
-                users_id = [id for id, in session.query(Player.id).filter(Player.is_admin==True)]
+                users_id = [id for id, in session.query(Player.id).filter(Player.is_admin==True).all()]
             elif user_type is UserType.PLAYER:
-                users_id = [id for id, in session.query(Player.id)]
+                users_id = [id for id, in session.query(Player.id).all()]
             if not update.effective_user.id in users_id:
-                print(f"Unauthorized access denied for {user}.")
+                logging.info(f"Unauthorized access denied for {user}.")
                 return
             return func(self, update, context, *args, **kwargs)
         return command_func
