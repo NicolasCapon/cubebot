@@ -27,7 +27,7 @@ class DeckHandler:
         self.cubelist = session.query(CubeList).filter(CubeList.cube_id == game.cube.id,
                                                        CubeList.uid != None).all()
         self.current_user = None
-        self.deck, self.scanned, self.user_scanned = None, [], []
+        self.deck, self.user_scanned = None, []
         self.loop = False # Scan loop
         # Scanning device config
         self.pn532 = PN532_SPI(debug=False, reset=20, cs=4)
@@ -130,8 +130,7 @@ class DeckHandler:
                                             text="Carte non reconnue, continue à scanner",
                                             reply_markup=reply_markup)
             # Check if card is already scanned
-            # TODO: verify if card is not scanned in another deck
-            elif not any(card.id == deck_card.card_id for deck_card in self.deck.cards):
+            elif not any(card.id == deck_card.card_id for deck_card in self.deck.cards) and not :
                 self.deck.cards.append(DeckList(card=card))
                 edit = f"Continue à scanner...\nCartes scannées ({len(self.deck.cards)}):"
                 for deck_card in self.deck.cards:
@@ -178,8 +177,7 @@ class DeckHandler:
                                     parse_mode="HTML")
             context.user_data["deck"] = self.deck
             context.user_data["deckstat"] = deckstat.get_deck_url(self.deck)
-            # Add card to 'scanned list' to avoid another player to scan this card
-            self.scanned += self.deck.cards
+            # Append user to list of player who already has scanned their deck
             self.user_scanned.append(query.from_user)
             self.game.decks.append(self.deck)
             session.commit()

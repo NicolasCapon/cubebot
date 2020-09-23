@@ -1,6 +1,7 @@
 # ignore all logs
 *.log
 *.db
+*.out
 
 # ignore venv & test folder
 bin/
@@ -8,8 +9,10 @@ include/
 lib/
 test/
 cubebot/old/
+cubebot/db/old/
 cubebot/resources/sounds/*
 pyvenv.cfg
+
 
 # ignore python generated files
 cubebot/__pycache__/

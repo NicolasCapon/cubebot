@@ -1,7 +1,8 @@
 /init with param to choose cube
 (upload decks on cubecobra)
-vérifier cubehandler au niveau des messages d'update envoyé (notes)
-notes ne doit prendre que le string entre parentheses
+Faire un handler de signature (reprendre /sign)
 
 Tester le module nfcpy
 add write data to nfc tag (utils)
+
+Bot de draft

@@ -1,4 +1,2 @@
 #!/bin/bash
-cd /home/pi/telegram/cubebot/
-source bin/activate
-sudo nohup python3.6 cubebot/startBot.py
+sudo nohup /home/pi/telegram/cubebot/bin/python /home/pi/telegram/cubebot/cubebot/startBot.py
