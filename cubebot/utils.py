@@ -2,6 +2,7 @@ import config
 import logging
 import os
 import scryfall
+import ndef
 from tqdm import tqdm
 from model import session, Cube, CubeList, Card, Game, Player, Deck, DeckList, Token
 from sqlalchemy.orm import sessionmaker
@@ -108,16 +109,9 @@ def get_cube_list(cube, from_file=False):
 
     csv_reader = csv.DictReader(data.splitlines())
     return list(csv_reader)
-
-def write_string_to_tag(data, pn532):
-    b = data.encode()
-    chunks = [b[i:i+4] for i in range(0, len(b), 4)]
-    for i, chunk in enumerate(chunks):
-        print(chunk)
-        result = pn532.ntag2xx_write_block(i, chunk)
-        print(f"Writing data: {result}")
     
 def quick_scan(cube):
+    """Show card on screen then scan it to pear tag id to card in DB"""
     pn532 = PN532_SPI(debug=False, reset=20, cs=4)
     pn532.SAM_configuration()
     cards = session.query(CubeList, Card).join(Card).filter(CubeList.cube_id == cube.id).all()
@@ -167,6 +161,29 @@ def scan_card_for_DB(cube):
             logging.info("Multiple cards found, try again")
 
     return cube
+    
+def scan_card_to_write_url(cube):
+    """Scan card to write card url on tag"""
+    pn532 = PN532_SPI(debug=False, reset=20, cs=4)
+    pn532.SAM_configuration()
+    loop = True
+    logging.info("Place card on the scanner then wait before removing it")
+    while loop:
+        # Check if a card is available to read
+        uid = pn532.read_passive_target(timeout=0.1)
+        # Try again if no card is available.
+        if uid is None:
+            continue
+        # Check if uid is known
+        card = session.query(Card).join(CubeList).filter(CubeList.uid == uid).first()
+        if card:
+            logging.info(f"{card.name} detected")
+            url = "https://scryfall.com/cards/" + card.scryfall_id
+            r = write_url_to_tag(url)
+            if r:
+                logging.info("WRITING SUCCESSFUL ! Remove card")
+        else:
+            logging.info("Card not recognized.")
 
 def test_scan(cube):
     cubelist = session.query(CubeList).join(Card).filter(CubeList.uid != None).all()
@@ -244,7 +261,7 @@ def update_cube(cube):
             cubelist_db = session.query(Card).join(CubeList).filter(Card.set_code==None,
                                                                     CubeList.cube_id == cube.id).all()
             cubelist_db = tqdm(cubelist_db, total=len(cubelist_db))
-            cubelist_db.set_description(f"Update cards info")
+            cubelist_db.set_description("Update cards info")
             for card_db in cubelist_db:
                 for card in cubelist:
                     if card_db.name == card["Name"]:
@@ -260,9 +277,23 @@ def update_cube(cube):
             logging.info("Update Complete")
             # Add yes no option / telegram handler
             session.commit()
-    return len(updates_to_proceed)
-    
+    return len(updates_to_proceed)block)
+    # return blocks
 
+def write_url_to_tag(url, block_size=4, write_size=16):
+    records = [ndef.UriRecord(url)]
+    data = b"\x03<" + b"".join(ndef.message_encoder(records)) + b"\xfe"
+    l = range(0, len(data), block_size)
+    l = tqdm(l, total=len(l))
+    l.set_description("Tag Writing")
+    for n, i in enumerate(l):
+        block = data[i:i+write_size].ljust(write_size, b"\x00")
+        # Writing begins in fourth block
+        r = pn532.mifare_classic_write_block(n+4, block)
+        if not r:
+            logging.error(f"Error while writing url [{url}] on {n+4}th block [{block}].")
+            return False
+    
 if __name__ == "__main__":
     """To test update :
     - create cube with last_update = 2020-04-01 13:58:21
@@ -271,22 +302,23 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                        # filename=config.log_file,
                         level=config.log_level)
+    
     cube = session.query(Cube).filter(Cube.id==1).first()
-    card = session.query(Card).filter(Card.name == "Island").first()
-    card2 = session.query(Card).filter(Card.name == "Snap").first()
-    deck = session.query(Deck).filter(Deck.id == 2).first()
-    print(card)
-    deck.add_card(card, 10)
-    deck.add_card(card2, 3)
-    print(deckstat.get_deck_url(deck))
-    # session.commit()
-    print(deck)
-    print(deck.cards)
+    scan_card_to_write_url(cube)
+    # card = session.query(Card).filter(Card.name == "Island").first()
+    # card2 = session.query(Card).filter(Card.name == "Snap").first()
+    # deck = session.query(Deck).filter(Deck.id == 2).first()
+    # print(card)
+    # deck.add_card(card, 10)
+    # deck.add_card(card2, 3)
+    # print(deckstat.get_deck_url(deck))
+    # print(deck)
+    # print(deck.cards)
     
     # cube.last_update = datetime.strptime("2020-09-15 13:58:21","%Y-%m-%d %H:%M:%S")
     # update_cube(cube)
     """To delete deck and his DeckList:
-       deck = db.session.query(Deck).get(1)
+        deck = db.session.query(Deck).get(1)
        deck.cards = []
        session.delete(deck)
        db.session.commit()
