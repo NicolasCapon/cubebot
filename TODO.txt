@@ -4,5 +4,33 @@ Faire un handler de signature (reprendre /sign)
 
 Tester le module nfcpy
 add write data to nfc tag (utils)
+Essayer de scanner en mode UART et non SPI
+https://github.com/adafruit/Adafruit_CircuitPython_PN532/blob/master/examples/pn532_readwrite_ntag2xx.py
+https://stackoverflow.com/questions/58313259/problems-reading-ndef-message-in-python-from-a-pn532-module-connected-to-a-raspb
+https://learn.adafruit.com/adafruit-pn532-rfid-nfc/ndef
+https://wiki.mchobby.be/index.php?title=PN532-RFID-NFC-Format-NDEF&mobileaction=toggle_view_desktop ++++
 
-Bot de draft
+Recharger la partie dans la nouvelle base
+(game id = 3)
+
+
+
+2020-09-25 10:29:27,194 - root - INFO - bytearray(b'\x04\xe0\xec\xea\xd1d\x80') -> UID
+bytearray(b'\x04\xe0\xec\x80   \xea\xd1d\x80\xdfH  \x00\x00\xe1\x10>  \x00')
+bytearray(b'\xea\xd1d\x80\xdfH  \x00\x00\xe1\x10>  \x00\x03\x10\xd1  \x01')
+bytearray(b'\xdfH\x00\x00\xe1 \x10>\x00\x03\x10\xd1\x01\x0cU\x04a')
+bytearray(b'\xe1\x10>\x00\x03\ x10\xd1\x01\x0cU\x04askur')
+bytearray(b'\x03\x10\xd1\x01 \x0cU\x04askurza.c')
+bytearray(b'\x0cU\x04askurza.com\xfe\x00')
+bytearray(b'skurza.com\xfe\x00\x00\x00\x00\x00')
+bytearray(b'za.com\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+bytearray(b'om\xfe\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+
+\xd1\x01\x0cU\x00askurza.com
+Ecrire dans le bloc 4
+
+https://translate.googleusercontent.com/translate_c?depth=1&hl=fr&prev=search&pto=aue&rurl=translate.google.com&sl=en&sp=nmt4&u=https://stackoverflow.com/questions/48404824/byte-array-gets-truncated-when-writing-to-memory-of-rfid-tag-using-adafruit-pn53&usg=ALkJrhhFG_jz2QpAHYF1YhLsIq8nOj9O-g

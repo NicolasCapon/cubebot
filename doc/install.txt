@@ -2,3 +2,4 @@
 sudo apt-get install vlc
 
 # TODO: install pn532 nfc reader
+https://www.waveshare.com/wiki/PN532_NFC_HAT#Read.2FWrite_NTAG2XX_Card
