@@ -281,7 +281,7 @@ class DeckHandler:
         
         elif query.data == DeckConv.SIGN.name:
             text = "Envoie moi le nom (les premières lettres de la cartes suffisent) "\
-                   "de la carte que tu souaites signer."
+                   "de la carte que tu souhaites signer."
             query.edit_message_text(text=text,
                                     parse_mode="HTML")
             return DeckConv.SIGN
@@ -379,7 +379,8 @@ class DeckHandler:
             return DeckConv.CONFIRM
 
         else:
-            update.message.reply_text("Je n'ai pas trouvé cette carte dans ton deck, recommence...",
+            text = "Je n'ai pas trouvé cette carte dans ton deck.\n" + self.get_deck_info(context)
+            update.message.reply_text(text=text,
                                       reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),
                                       parse_mode="HTML")
             return DeckConv.ACTION
@@ -387,17 +388,17 @@ class DeckHandler:
     def confirm_card(self, update, context):
         query = update.callback_query
         if query.data == "1":
-            text = "Ok, envoie moi un fichier audio pour signer ta carte. (/stop pour sortir)"
+            text = "Ok, envoie moi un fichier audio pour signer ta carte.\n(/stop pour sortir)"
             query.edit_message_text(text=text)
             return DeckConv.SENDING
 
         elif query.data == "2":
-            text = "No problemo, renvoie moi le nom de ta carte."
+            text = "No problemo, renvoie moi le nom de ta carte.\n(/stop pour sortir)"
             query.edit_message_text(text=text)
             return DeckConv.SIGN
 
         else:
-            text = "Comme tu voudras." + self.get_deck_info(context)
+            text = "Comme tu voudras.\n" + self.get_deck_info(context)
             query.edit_message_text(text=text,
                                     reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),
                                     parse_mode="HTML")
@@ -444,7 +445,7 @@ class DeckHandler:
                 return DeckConv.SENDING
 
         else:
-            text = "Format audio inconnu. Essayes-en un autre."
+            text = "Format audio inconnu. Essayes-en un autre.\n(/stop pour sortir)"
             update.message.reply_text(text=text)
             return DeckConv.SENDING
         

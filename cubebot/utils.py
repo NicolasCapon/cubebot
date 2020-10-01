@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 import csv
 import requests
 import feedparser
-from time import mktime
+from time import mktime, sleep
 from datetime import datetime
 from bs4 import BeautifulSoup
 from pn532 import PN532_SPI
@@ -167,6 +167,7 @@ def scan_card_to_write_url(cube):
     pn532.SAM_configuration()
     loop = True
     logging.info("Place card on the scanner then wait before removing it")
+    uids = []
     while loop:
         # Check if a card is available to read
         uid = pn532.read_passive_target(timeout=0.1)
@@ -175,14 +176,16 @@ def scan_card_to_write_url(cube):
             continue
         # Check if uid is known
         card = session.query(Card).join(CubeList).filter(CubeList.uid == uid).first()
-        if card:
+        if card and not uid in uids:
             logging.info(f"{card.name} detected")
             url = "https://scryfall.com/cards/" + card.scryfall_id
+            sleep(0.3)
             r = write_url_to_tag(url, pn532)
             if r:
+                uids.append(uid)
                 logging.info("WRITING SUCCESSFUL ! Remove card")
-        else:
-            logging.info("Card not recognized.")
+        elif not card:
+            logging.info("Card not recognized or already scanned.")
 
 def test_scan(cube):
     cubelist = session.query(CubeList).join(Card).filter(CubeList.uid != None).all()
@@ -290,25 +293,20 @@ def write_url_to_tag(url, scanner, block_size=4, write_size=16):
         r = scanner.mifare_classic_write_block(n+4, block)
         if not r:
             logging.error(f"Error while writing url [{url}] on {n+4}th block [{block}].")
-            return False
+            return r
+    return r
     
 if __name__ == "__main__":
     """To test update :
     - create cube with last_update = 2020-04-01 13:58:21
     - load from csv in test directory
     """
-    import deckstat_interface as deckstat
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                        # filename=config.log_file,
                         level=config.log_level)
     
-    import random
-    cards = session.query(Card).join(CubeList).join(Cube).filter(Cube.id == 1, Card.type_line != "Basic Land").all()
-    # cube = session.query(Cube).filter(Cube.id==1).first()
-    # p1 = session.query(Player).filter(Player.name=="Nicolas").first()
-    # cards = cube.cards
-    # random.shuffle(cards)
-    print(len(cards))
+    cube = session.query(Cube).first()
+    scan_card_to_write_url(cube)
     # card = session.query(Card).filter(Card.name == "Island").first()
     # card2 = session.query(Card).filter(Card.name == "Snap").first()
     # deck = Deck()
