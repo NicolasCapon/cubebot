@@ -2,6 +2,7 @@ import config
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Binary, Boolean, DateTime, create_engine
 from sqlalchemy.orm import sessionmaker, relationship, backref
+from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.sql.schema import ForeignKey
@@ -150,7 +151,7 @@ class Deck(Base):
     game_id = Column(Integer, ForeignKey("game.id"))
     game = relationship("Game", back_populates="decks")
 
-    cards = relationship("DeckList")
+    cards = association_proxy('cards', 'decklist')# relationship("DeckList")
     
     def set_is_winner(self, is_winner):
         self.is_winner = is_winner
@@ -194,14 +195,18 @@ class DeckList(Base):
     
     # is_sideboard = Column(Boolean, default=False)
 
-    deck = relationship(Deck)
+    deck = relationship(Deck,
+                backref=backref("cards",
+                                cascade="all, delete-orphan")
+            )#relationship(Deck)
     card = relationship(Card)
 
-    def __init__(self, deck=None, card=None, amount=None):
+    def __init__(self, deck=None, card=None, amount=None, note=None):
         self.deck = deck
         self.card = card
         self.amount = amount
-
+        self.note = note
+        
     def __repr__(self):
         return f"<DeckList(deck_id={self.deck_id}, card_id={self.card_id}, "\
                f"amount={self.amount}, note={self.note})>"

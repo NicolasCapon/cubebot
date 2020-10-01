@@ -17,6 +17,10 @@ class SignConv(Enum):
     CHOOSING = auto()
     CONFIRM = auto()
     SENDING = auto()
+    
+class SealedConv(Enum):
+    CHOOSING = auto()
+    SENDING = auto()
 
 class DeckConv(Enum):
     ACTION = auto()

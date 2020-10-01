@@ -30,6 +30,7 @@ def audio_scan(cube, context):
         cubelist, decklist= None, None
         result = session.query(CubeList, DeckList).filter(CubeList.card_id == DeckList.card_id).filter(CubeList.cube_id == cube.id,
                              CubeList.uid == uid).first()
+        print(result)
         if result is not None:
             cubelist, decklist = result
             if decklist.note:

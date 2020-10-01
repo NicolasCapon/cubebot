@@ -105,6 +105,7 @@ class DeckHandler:
         logging.info(f"{user} starts scanning his deck")
         self.current_user = session.query(Player).filter(Player.id==user.id).first()
         self.deck = Deck(player=self.current_user, name=f"Deck de {self.current_user.name}", game=self.game)
+        session.add(self.deck)
         text = f"Yo {self.current_user.name}, commence à scanner les cartes que tu as drafté !"
         reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
         message = context.bot.send_message(chat_id=user.id,
@@ -130,8 +131,9 @@ class DeckHandler:
                                             text="Carte non reconnue, continue à scanner",
                                             reply_markup=reply_markup)
             # Check if card is already scanned
-            elif not any(card.id == deck_card.card_id for deck_card in self.deck.cards) and not :
-                self.deck.cards.append(DeckList(card=card))
+            elif not any(card.id == deck_card.card_id for deck_card in self.deck.cards):
+                DeckList(deck=self.deck, card=card)
+                session.flush()
                 edit = f"Continue à scanner...\nCartes scannées ({len(self.deck.cards)}):"
                 for deck_card in self.deck.cards:
                     edit += f"\n- {deck_card.card.name}"
@@ -155,13 +157,17 @@ class DeckHandler:
             # Cancel is called
             text = "Scan annulé, ton deck n'a pas été enregistré.\n"\
                    "Pour recommencer: /deck"
+            session.delete(self.deck)
             query.edit_message_text(text=text,
                                     parse_mode="HTML")
             self.reset_state(context.dispatcher)
             
         if query.data == "1" and self.deck.cards:
             # Remove last element of decklist
-            del self.deck.cards[-1]
+            # del self.deck.cards[-1]
+            self.deck.cards.remove(self.deck.cards[-1])
+##            session.delete(self.deck.cards[-1])
+##            session.flush()
             edit = f"Cartes scannées ({len(self.deck.cards)}):"
             for deck_card in self.deck.cards:
                 edit += f"\n- {deck_card.card.name}"
@@ -292,7 +298,7 @@ class DeckHandler:
                     else:
                         text+= f"- <a href='{token.image_url}'>{token.color} {token.name}</a>\n"
             if not count:
-                text = "Ton deck n'a pas besoin de tokens"
+                text = "Ton deck n'a pas besoin de token.\n"
             text += self.get_deck_info(context)
             query.edit_message_text(text=text,
                                     reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),
@@ -331,14 +337,16 @@ class DeckHandler:
         for cardname, note in matches:
             try:
                 card = session.query(Card).filter(Card.name.like(cardname.strip() + "%")).one()
+                print(card)
             except MultipleResultsFound:
                 errors.append((cardname, "plusieurs cartes trouvées"))
                 continue
             except NoResultFound:
                 errors.append((cardname, "pas de carte trouvée"))
                 continue
-            if card in context.user_data['deck'].cards:
-                session.query(DeckList).filter(DeckList.card_id == card.id, DeckList.deck_id == context.user_data["deck"].id).first().note = note
+            if any(card.id == deck_card.card_id for deck_card in context.user_data['deck'].cards):
+                deck_card = session.query(DeckList).filter(DeckList.card_id == card.id, DeckList.deck_id == context.user_data["deck"].id).first()
+                deck_card.note = note
             else:
                 errors.append((cardname, "carte absente du deck"))
         session.commit()
@@ -452,12 +460,20 @@ class DeckHandler:
         
     def set_deck_cards(self, update, context):
         answer = update.message.text
-        regex = r"([+-])(\d?) (.*)"
-        r = re.compile(regex)
-        matches = r.findall(answer)
+        regex =  r"([+/-])? ?(\d*?) ?(\[.*\])? (.*)" # r"([+-])(\d?) (.*)"      (([+-]?)(\d*?) (\[.*\]) ?)?([a-zA-Z].*)
+        reg = re.compile(regex)
+        # matches = reg.findall(answer)
         errors = []
         modif = 0
-        for mode, num, cardname in matches:
+        for line in answer.split("\n"):
+            matches = reg.findall(line)
+            if matches:
+                mode, num, set_code, cardname = matches[0]
+                print(f"mode:'{mode}' num:'{num}' set_code:'{set_code}' cardname:'{cardname}'")
+            else:
+                errors.append((line, "expression non reconnue"))
+                continue
+        # for mode, num, set_code, cardname in matches:
             if not num:
                 num = 1
             else:
@@ -471,7 +487,7 @@ class DeckHandler:
             except NoResultFound:
                 errors.append((cardname, "pas de carte trouvée"))
                 continue
-            if mode == "+":
+            if mode == "" or mode == "+":
                 context.user_data['deck'].add_card(card, num)
                 modif += 1
             elif mode == "-":

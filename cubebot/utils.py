@@ -14,7 +14,6 @@ from time import mktime
 from datetime import datetime
 from bs4 import BeautifulSoup
 from pn532 import PN532_SPI
-import deckstat_interface as deckstat
 
 def create_cube():
     c = Cube(name="Multiplayer Yolo Cube",
@@ -179,7 +178,7 @@ def scan_card_to_write_url(cube):
         if card:
             logging.info(f"{card.name} detected")
             url = "https://scryfall.com/cards/" + card.scryfall_id
-            r = write_url_to_tag(url)
+            r = write_url_to_tag(url, pn532)
             if r:
                 logging.info("WRITING SUCCESSFUL ! Remove card")
         else:
@@ -277,10 +276,9 @@ def update_cube(cube):
             logging.info("Update Complete")
             # Add yes no option / telegram handler
             session.commit()
-    return len(updates_to_proceed)block)
-    # return blocks
+    return len(updates_to_proceed)
 
-def write_url_to_tag(url, block_size=4, write_size=16):
+def write_url_to_tag(url, scanner, block_size=4, write_size=16):
     records = [ndef.UriRecord(url)]
     data = b"\x03<" + b"".join(ndef.message_encoder(records)) + b"\xfe"
     l = range(0, len(data), block_size)
@@ -289,7 +287,7 @@ def write_url_to_tag(url, block_size=4, write_size=16):
     for n, i in enumerate(l):
         block = data[i:i+write_size].ljust(write_size, b"\x00")
         # Writing begins in fourth block
-        r = pn532.mifare_classic_write_block(n+4, block)
+        r = scanner.mifare_classic_write_block(n+4, block)
         if not r:
             logging.error(f"Error while writing url [{url}] on {n+4}th block [{block}].")
             return False
@@ -299,21 +297,37 @@ if __name__ == "__main__":
     - create cube with last_update = 2020-04-01 13:58:21
     - load from csv in test directory
     """
+    import deckstat_interface as deckstat
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                        # filename=config.log_file,
                         level=config.log_level)
     
-    cube = session.query(Cube).filter(Cube.id==1).first()
-    scan_card_to_write_url(cube)
+    import random
+    cards = session.query(Card).join(CubeList).join(Cube).filter(Cube.id == 1, Card.type_line != "Basic Land").all()
+    # cube = session.query(Cube).filter(Cube.id==1).first()
+    # p1 = session.query(Player).filter(Player.name=="Nicolas").first()
+    # cards = cube.cards
+    # random.shuffle(cards)
+    print(len(cards))
     # card = session.query(Card).filter(Card.name == "Island").first()
     # card2 = session.query(Card).filter(Card.name == "Snap").first()
-    # deck = session.query(Deck).filter(Deck.id == 2).first()
-    # print(card)
-    # deck.add_card(card, 10)
-    # deck.add_card(card2, 3)
-    # print(deckstat.get_deck_url(deck))
+    # deck = Deck()
+    
+    # deck.cards.append(card)
     # print(deck)
-    # print(deck.cards)
+##    
+##    print(cube)
+##    card = session.query(Card).filter(Card.name == "Island").first()
+##    card2 = session.query(Card).filter(Card.name == "Snap").first()
+##    deck = session.query(Deck).filter(Deck.id == 6).first()
+##    print(card)
+##    deck.add_card(card, 10)
+##    deck.add_card(card2, 3)
+##    print(deckstat.get_deck_url(deck))
+##    print(deck)
+##    print(deck.cards)
+##    scan_card_to_write_url(cube)
+    
     
     # cube.last_update = datetime.strptime("2020-09-15 13:58:21","%Y-%m-%d %H:%M:%S")
     # update_cube(cube)
