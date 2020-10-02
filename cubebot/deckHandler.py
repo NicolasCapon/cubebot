@@ -26,8 +26,10 @@ class DeckHandler:
         self.game = game
         self.cubelist = session.query(CubeList).filter(CubeList.cube_id == game.cube.id,
                                                        CubeList.uid != None).all()
+        if rematch 
         self.current_user = None
-        self.deck, self.user_scanned = None, []
+        self.deck = None
+        # self.user_scanned = []
         self.loop = False # Scan loop
         # Scanning device config
         self.pn532 = PN532_SPI(debug=False, reset=20, cs=4)
@@ -80,6 +82,7 @@ class DeckHandler:
         Use InlineKeyboardMarkup to correct a card or submit your deck or see stats about it
         """
         user = update.message.from_user
+        deck = self.game.get_deck_from_player_id(user.id)
         # Remove entry point to ensure one user is scanning only
         if self.current_user and user != self.current_user:
             text = f"{self.current_user.name} est déjà en train de scanner."
@@ -95,18 +98,21 @@ class DeckHandler:
             return False
 
         # Avoid multiple deck per user
-        elif user in self.user_scanned:
-            text = f"{self.current_user.name}, tu as déjà scanné ton deck."
-            context.bot.send_message(chat_id=user.id,
-                                     text=text)
-            return False
-
-        # Prepare message
-        logging.info(f"{user} starts scanning his deck")
-        self.current_user = session.query(Player).filter(Player.id==user.id).first()
-        self.deck = Deck(player=self.current_user, name=f"Deck de {self.current_user.name}", game=self.game)
-        session.add(self.deck)
-        text = f"Yo {self.current_user.name}, commence à scanner les cartes que tu as drafté !"
+        elif deck:
+            logging.info(f"{user} starts scanning new cards for his existing deck")
+            self.deck = deck
+            self.current_user = session.query(Player).filter(Player.id==user.id).first()
+        # elif user.id in self.user_scanned:
+            # text = f"{self.current_user.name}, tu as déjà un deck chargé, utilise /mydeck pour le consulter."
+            # context.bot.send_message(chat_id=user.id,
+                                     # text=text)
+            # return False
+        else:
+            logging.info(f"{user} starts scanning his new deck")
+            self.current_user = session.query(Player).filter(Player.id==user.id).first()
+            self.deck = Deck(player=self.current_user, name=f"Deck de {self.current_user.name}", game=self.game)
+            session.add(self.deck)
+        text = f"Yo {self.current_user.name}, commence à scanner tes cartes !"
         reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
         message = context.bot.send_message(chat_id=user.id,
                                            text=text,
@@ -184,8 +190,9 @@ class DeckHandler:
             context.user_data["deck"] = self.deck
             context.user_data["deckstat"] = deckstat.get_deck_url(self.deck)
             # Append user to list of player who already has scanned their deck
-            self.user_scanned.append(query.from_user)
-            self.game.decks.append(self.deck)
+            # self.user_scanned.append(query.from_user.id)
+            if not self.deck in self.game.decks:
+                self.game.decks.append(self.deck)
             session.commit()
             logging.info(f"{self.deck} saved")
             self.reset_state(context.dispatcher)
@@ -217,6 +224,7 @@ class DeckHandler:
         deckstat_text = f"<a href='{context.user_data['deckstat']}'>{context.user_data['deck'].name}</a>"
         text = f"Titre: {deckstat_text if context.user_data['deckstat'] else context.user_data['deck'].name}\n" \
                f"Description: {context.user_data['deck'].description if context.user_data['deck'].description else 'Aucune'}\n" \
+               f"Nombres de cartes: {len(context.user_data['deck'].cards)}\n" \
                f"Que souhaites-tu voir ou modifier dans ton deck ?"
         return text
         
@@ -230,13 +238,20 @@ class DeckHandler:
         This handler is available once you have created a deck and until end of the game
         """
         # Check if user has a deck
-        if not context.user_data.get("deck", None):
-            text = "Tu n'as pas encore sauvegardé de deck."
+        deck = self.game.get_deck_from_player_id(update.message.from_user.id)
+        if not deck:
+            # If user has no deck, close conversation
+        # if not context.user_data.get("deck", None):
+            text = "Tu n'as pas encore sauvegardé de deck. Utilise /deck pour initier ton deck"
             context.bot.send_message(chat_id=update.message.from_user.id,
                                      text=text)
             return ConversationHandler.END
-        
-        # Modify : deck name, title, content, see stats...
+        elif not context.user_data.get("deck", None):
+            # If user has deck but not in context_data, had it
+            context.user_data['deck'] = deck
+            context.user_data["deckstat"] = deckstat.get_deck_url(deck)
+
+        # Send deck_editor menu
         context.bot.send_message(chat_id=update.message.from_user.id,
                                  text=self.get_deck_info(context),
                                  reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),
@@ -368,6 +383,20 @@ class DeckHandler:
                                                                  Card.name.like(f"{answer}%")).first()
         avert = "Attention cette carte est déjà signée !\n"
         if c:
+            if c.signature:
+                path = os.path.join(config.src_dir, "resources", "sounds", c.signature)
+                filename, file_extension = os.path.splitext(path)
+                audio_formats = [".mp3", ".m4a"]
+                voice_formats = [".ogg", ".oga"]
+                if file_extension in audio_formats:
+                    context.bot.sendAudio(chat_id=update.message.chat_id,
+                                          audio=open(path, 'rb'),
+                                          title=c.card.name,
+                                          performer="cubebot")
+                elif file_extension in voice_formats:
+                    context.bot.sendVoice(chat_id=update.message.chat_id,
+                                          voice=open(path, 'rb'),
+                                          caption=c.card.name)
             text = f"{avert if c.signature  else ''}{c.card.name} - Est-ce bien ta carte ?"
             keyboard = [[InlineKeyboardButton("Annuler", callback_data='0'),
                          InlineKeyboardButton("Retenter", callback_data='2')],
@@ -425,8 +454,8 @@ class DeckHandler:
         elif update.message.entities:
             url = update.message.parse_entity(update.message.entities[0])
             filename, file_extension = os.path.splitext(url)
-            logging.info(filename, file_extension)
-            audio_formats = [".mp3", ".wav", ".ogg"]
+            logging.info(f"Audio to download from url: {url}")
+            audio_formats = [".mp3", ".m4a", ".ogg"]
             if file_extension in audio_formats: 
                 r = requests.get(url)
                 if r.ok:

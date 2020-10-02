@@ -82,11 +82,12 @@ def send_help(update, context):
     """Send commands and if admin request send additionnals admin commands"""
     text = ""
     if update.effective_user.id == config.admin_id:
-        # Send all commands
+        # ADMIN: Send all commands
         text += f"Pour inviter de nouveaux joueurs envoie leur {config.share_url}\n"\
                 f"/init - initialize game\n"\
                 f"/play [mode]- start playing game mode\n"\
-                f"/win - stop game\n"
+                f"/win - stop game\n"\
+                "/sealed send sealed pool"
 
     text += f"/deck - start scanning\n"\
             f"/mydeck - edit your deck\n"

@@ -114,6 +114,13 @@ class Game(Base):
 
     cube_id = Column(Integer, ForeignKey("cube.id"))
     cube = relationship("Cube", back_populates="games")
+    
+    @hybrid_method
+    def get_deck_from_player_id(self, player_id):
+        for deck in decks:
+            if deck.player.id == player_id:
+                return deck
+        return None
 
     def __repr__(self):
         return f"<Game(id={self.id}, date={self.date}, "\

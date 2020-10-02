@@ -305,8 +305,21 @@ if __name__ == "__main__":
                        # filename=config.log_file,
                         level=config.log_level)
     
-    cube = session.query(Cube).first()
-    scan_card_to_write_url(cube)
+    print(session.query(Card).join(CubeList).filter(CubeList.signature.like("%.mp3")).first())
+    # cube = session.query(Cube).first()
+    # d = session.query(Deck).first()
+    # print(d.game)
+    # g = Game()
+    # cube.games.append(g)
+    # d2 = Deck(player=d.player, name=d.name, description=d.description)
+    # for deck_card in d.cards:
+        # DeckList(deck=d2, card=deck_card.card, amount=deck_card.amount, note=deck_card.note)
+    # g.decks.append(d2)
+    # session.commit()
+    # print(g)
+    # print(g.decks)
+    # print(g.decks[0].cards)
+    # print(d)
     # card = session.query(Card).filter(Card.name == "Island").first()
     # card2 = session.query(Card).filter(Card.name == "Snap").first()
     # deck = Deck()
