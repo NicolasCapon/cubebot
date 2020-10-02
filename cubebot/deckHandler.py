@@ -26,7 +26,7 @@ class DeckHandler:
         self.game = game
         self.cubelist = session.query(CubeList).filter(CubeList.cube_id == game.cube.id,
                                                        CubeList.uid != None).all()
-        if rematch 
+
         self.current_user = None
         self.deck = None
         # self.user_scanned = []
@@ -36,7 +36,7 @@ class DeckHandler:
         self.pn532.SAM_configuration()
         
         # Handlers
-        self.scan_handler = CommandHandler("deck", self.new_deck)
+        self.scan_handler = CommandHandler("scan", self.new_deck)
         dispatcher.add_handler(self.scan_handler)
         self.scan_buttons_handler = CallbackQueryHandler(self.scan_buttons)
         # Conversation Handler for deck title and description
@@ -77,7 +77,7 @@ class DeckHandler:
     @restrict(UserType.PLAYER)
     @run_async
     def new_deck(self, update, context):
-        """/deck
+        """/scan
         NFC Scan each player deck turn by turn
         Use InlineKeyboardMarkup to correct a card or submit your deck or see stats about it
         """
@@ -162,7 +162,7 @@ class DeckHandler:
         if query.data == "0":
             # Cancel is called
             text = "Scan annulé, ton deck n'a pas été enregistré.\n"\
-                   "Pour recommencer: /deck"
+                   "Pour recommencer: /scan"
             session.delete(self.deck)
             query.edit_message_text(text=text,
                                     parse_mode="HTML")
@@ -220,11 +220,13 @@ class DeckHandler:
         return conv_handler
 
     def get_deck_info(self, context):
-        """TODO : create attribue deckstat in context.user_data['deckstat']"""
-        deckstat_text = f"<a href='{context.user_data['deckstat']}'>{context.user_data['deck'].name}</a>"
-        text = f"Titre: {deckstat_text if context.user_data['deckstat'] else context.user_data['deck'].name}\n" \
+        if context.user_data.get('deckstat', None):
+            deckstat_text = f"<a href='{context.user_data['deckstat']}'>{context.user_data['deck'].name}</a>"
+        else:
+            deckstat_text = None
+        text = f"Titre: {deckstat_text if deckstat_text else context.user_data['deck'].name}\n" \
                f"Description: {context.user_data['deck'].description if context.user_data['deck'].description else 'Aucune'}\n" \
-               f"Nombres de cartes: {len(context.user_data['deck'].cards)}\n" \
+               f"Nombres de cartes: {context.user_data['deck'].card_count}\n" \
                f"Que souhaites-tu voir ou modifier dans ton deck ?"
         return text
         
@@ -240,12 +242,11 @@ class DeckHandler:
         # Check if user has a deck
         deck = self.game.get_deck_from_player_id(update.message.from_user.id)
         if not deck:
-            # If user has no deck, close conversation
-        # if not context.user_data.get("deck", None):
-            text = "Tu n'as pas encore sauvegardé de deck. Utilise /deck pour initier ton deck"
-            context.bot.send_message(chat_id=update.message.from_user.id,
-                                     text=text)
-            return ConversationHandler.END
+            p = session.query(Player).filter(Player.id==update.message.from_user.id).first()
+            d = Deck(player=p, name=f"Deck de {p.name}", game=self.game)
+            self.game.decks.append(d)
+            session.commit()
+            context.user_data['deck'] = d
         elif not context.user_data.get("deck", None):
             # If user has deck but not in context_data, had it
             context.user_data['deck'] = deck
@@ -352,7 +353,6 @@ class DeckHandler:
         for cardname, note in matches:
             try:
                 card = session.query(Card).filter(Card.name.like(cardname.strip() + "%")).one()
-                print(card)
             except MultipleResultsFound:
                 errors.append((cardname, "plusieurs cartes trouvées"))
                 continue
@@ -490,20 +490,27 @@ class DeckHandler:
         
     def set_deck_cards(self, update, context):
         answer = update.message.text
+        if answer == "REMOVE ALL CARDS":
+            context.user_data['deck'].cards[:] = []
+            session.commit()
+            context.user_data['deckstat'] = None
+            text = "Jai bien supprimé toutes les cartes de ton deck.\n"
+            update.message.reply_text(text=text+self.get_deck_info(context),
+                                      reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),
+                                      parse_mode="HTML")
+            return DeckConv.ACTION
+        
         regex =  r"([+/-])? ?(\d*?) ?(\[.*\])? (.*)" # r"([+-])(\d?) (.*)"      (([+-]?)(\d*?) (\[.*\]) ?)?([a-zA-Z].*)
         reg = re.compile(regex)
-        # matches = reg.findall(answer)
         errors = []
         modif = 0
         for line in answer.split("\n"):
             matches = reg.findall(line)
             if matches:
                 mode, num, set_code, cardname = matches[0]
-                print(f"mode:'{mode}' num:'{num}' set_code:'{set_code}' cardname:'{cardname}'")
             else:
                 errors.append((line, "expression non reconnue"))
                 continue
-        # for mode, num, set_code, cardname in matches:
             if not num:
                 num = 1
             else:

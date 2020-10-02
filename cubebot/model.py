@@ -4,7 +4,7 @@ from sqlalchemy import Column, Integer, String, Binary, Boolean, DateTime, creat
 from sqlalchemy.orm import sessionmaker, relationship, backref
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.ext.hybrid import hybrid_method
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.sql.schema import ForeignKey
 
 engine = create_engine(config.db, connect_args={'check_same_thread': False})
@@ -117,7 +117,7 @@ class Game(Base):
     
     @hybrid_method
     def get_deck_from_player_id(self, player_id):
-        for deck in decks:
+        for deck in self.decks:
             if deck.player.id == player_id:
                 return deck
         return None
@@ -162,6 +162,13 @@ class Deck(Base):
     
     def set_is_winner(self, is_winner):
         self.is_winner = is_winner
+
+    @hybrid_property
+    def card_count(self):
+        count = 0
+        for deck_card in self.cards:
+            count += deck_card.amount
+        return count
     
     @hybrid_method
     def add_card(self, card, amount=1):

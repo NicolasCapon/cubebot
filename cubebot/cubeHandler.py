@@ -63,7 +63,7 @@ class CubeHandler():
         # Next state is now available for admin
         context.dispatcher.add_handler(self.play_game_handler)
         # Send ok message
-        text = "Les joueurs peuvent commencer à scanner leur deck en tapant /deck."
+        text = "Les joueurs peuvent commencer à scanner leur deck en tapant /scan."
         context.bot.send_message(chat_id=config.chat_id,
                                  text=text)
     
@@ -95,7 +95,7 @@ class CubeHandler():
         # Next state is now available for admin
         context.dispatcher.add_handler(self.play_game_handler)
         # Send ok message
-        text = "Les joueurs peuvent visualiser et éditer leur ancien deck avec la commande: /deck."
+        text = "Les joueurs peuvent visualiser et éditer leur ancien deck avec la commande: /mydeck."
         context.bot.send_message(chat_id=config.chat_id,
                                  text=text)    
     
@@ -124,8 +124,6 @@ class CubeHandler():
         text = "La partie peut commencer !"
         context.bot.send_message(chat_id=config.chat_id, text=text)
         
-        for deck in self.game.decks:
-            print(deck.cards)
         # Start nfc sanner
         audio.audio_scan(self.cube, context)
 
@@ -318,9 +316,12 @@ class CubeHandler():
                                  InlineKeyboardButton("Finir la partie", callback_data="0")])
             markup = InlineKeyboardMarkup(keyboard)
             text = "Qui est le vainqueur de cette partie ?\n"
-            text += "\n".join(context.user_data["winners"])
+            winners = session.query(Player).filter(Player.id.in_(context.user_data["winners"])).all()
+            for winner in winners:
+                text += f"\n<a href='tg://user?id={winner.id}'>{winner.name}</a>"
             query.edit_message_text(text=text,
-                                    reply_markup=markup)
+                                    reply_markup=markup,
+                                    parse_mode="HTML")
             return WinConv.CHOOSING
 
         else:
@@ -347,7 +348,9 @@ class CubeHandler():
         self.game.description = answer
         session.commit()
         logging.info("Game description saved")
-        text = "Merci, la partie est bien enregistrée et terminée.\nPour en lancer une autre: /init"
+        text = "Merci, la partie est bien enregistrée et terminée."\
+               "\nPour en lancer une autre: /init"\
+               "\nPour recommencer avec ces decks: /rematch"
         update.message.reply_text(text=text)
         # RESET all states to init
         context.job_queue.stop()

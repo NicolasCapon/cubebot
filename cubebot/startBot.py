@@ -84,13 +84,16 @@ def send_help(update, context):
     if update.effective_user.id == config.admin_id:
         # ADMIN: Send all commands
         text += f"Pour inviter de nouveaux joueurs envoie leur {config.share_url}\n"\
-                f"/init - initialize game\n"\
-                f"/play [mode]- start playing game mode\n"\
-                f"/win - stop game\n"\
-                "/sealed send sealed pool"
+                "/init - initialize game\n"\
+                "/play [mode]- start playing game mode\n"\
+                "/win - stop game\n"\
+                "/sealed - send sealed pool\n"\
+                "/rematch - reload last decks\n"
 
-    text += f"/deck - start scanning\n"\
-            f"/mydeck - edit your deck\n"
+    text += "/scan - scanner ses cartes\n"\
+            "/mydeck - editer son deck\n"
+            "Tips:\n- Pour supprimer toutes les cartes de son deck, "\
+            "taper 'REMOVE ALL CARDS' dans le menu d'édition des cartes"
 
     if update.effective_user.id == config.admin_id:
         context.bot.send_message(update.effective_user.id, text=text)
