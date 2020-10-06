@@ -305,15 +305,16 @@ class DeckHandler:
         elif query.data == DeckConv.TOKEN.name:
             deck = session.query(Deck).filter(Deck.id==context.user_data["deck"].id).first()
             text = "Voici la liste des tokens dont tu auras besoin:\n"
-            count = 0
+            tokens = []
             for deck_card in deck.cards:
                 for token in deck_card.card.tokens:
-                    count += 1
-                    if token.power and token.toughness:
+                    if token in tokens: continue
+                    tokens.append(token)
+                    if isinstance(token.power, int) and isinstance(token.toughness, int):
                         text+= f"- <a href='{token.image_url}'>{token.power}/{token.toughness} {token.color} {token.name}</a>\n"
                     else:
                         text+= f"- <a href='{token.image_url}'>{token.color} {token.name}</a>\n"
-            if not count:
+            if not tokens:
                 text = "Ton deck n'a pas besoin de token.\n"
             text += self.get_deck_info(context)
             query.edit_message_text(text=text,
@@ -350,6 +351,7 @@ class DeckHandler:
         r = re.compile(regex)
         matches = r.findall(answer)
         errors = []
+        modif = 0
         for cardname, note in matches:
             try:
                 card = session.query(Card).filter(Card.name.like(cardname.strip() + "%")).one()
@@ -362,9 +364,11 @@ class DeckHandler:
             if any(card.id == deck_card.card_id for deck_card in context.user_data['deck'].cards):
                 deck_card = session.query(DeckList).filter(DeckList.card_id == card.id, DeckList.deck_id == context.user_data["deck"].id).first()
                 deck_card.note = note
+                modif += 1
             else:
                 errors.append((cardname, "carte absente du deck"))
         session.commit()
+        if modif: context.user_data['deckstat'] = deckstat.get_deck_url(context.user_data['deck'])
         text = "J'ai bien modifié les notes de ton deck."
         if errors:
             text +=  " Cependant j'ai un problème avec les cartes suivantes:"
@@ -505,6 +509,13 @@ class DeckHandler:
         errors = []
         modif = 0
         for line in answer.split("\n"):
+            # Import note after # mark with this syntax: 1 [CN2] Arcane Savant #Summon the pack
+            note = None
+            s_note = line.split(' #', 1)
+            if len(s_note) == 2:
+                line = s_note[0]
+                note = s_note[1]
+                print(note)
             matches = reg.findall(line)
             if matches:
                 mode, num, set_code, cardname = matches[0]
@@ -525,13 +536,14 @@ class DeckHandler:
                 errors.append((cardname, "pas de carte trouvée"))
                 continue
             if mode == "" or mode == "+":
-                context.user_data['deck'].add_card(card, num)
+                context.user_data['deck'].add_card(card=card, amount=num, note=note)
                 modif += 1
             elif mode == "-":
                 r = context.user_data['deck'].remove_card(card, num)
                 if not r: errors.append((cardname, "carte absente du deck"))
                 modif += 1
         session.commit()
+        print(context.user_data['deck'].cards)
         text = "J'ai bien modifié le contenu de ton deck."
         if errors:
             text +=  " Cependant je n'ai pas trouvé les cartes suivantes:"

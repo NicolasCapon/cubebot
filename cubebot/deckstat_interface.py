@@ -13,8 +13,8 @@ def get_deck_url(deck):
     decklist = ""
     for i, deck_card in enumerate(deck.cards):
         br = "\n"
-        decklist += f"{deck_card.amount}x {deck_card.card.name}{br if i<len(deck.cards)-1 else ''}"
-    
+        note = " #"
+        decklist += f"{deck_card.amount}x {deck_card.card.name}{note+deck_card.note if deck_card.note else ''}{br if i<len(deck.cards)-1 else ''}"
     return get_url(decklist, deck.name)
 
 def get_sealed_url(cards, player):

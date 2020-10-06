@@ -305,7 +305,11 @@ if __name__ == "__main__":
                        # filename=config.log_file,
                         level=config.log_level)
     
-    print(session.query(Card).join(CubeList).filter(CubeList.signature.like("%.mp3")).first())
+    import deckstat_interface as deckstat
+    deck = session.query(Deck).order_by(Deck.id.desc()).first()
+    deck.cards[0].note = "test"
+    session.commit()
+    print(deckstat.get_deck_url(deck))
     # cube = session.query(Cube).first()
     # d = session.query(Deck).first()
     # print(d.game)

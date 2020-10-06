@@ -91,7 +91,7 @@ def send_help(update, context):
                 "/rematch - reload last decks\n"
 
     text += "/scan - scanner ses cartes\n"\
-            "/mydeck - editer son deck\n"
+            "/mydeck - editer son deck\n" \
             "Tips:\n- Pour supprimer toutes les cartes de son deck, "\
             "taper 'REMOVE ALL CARDS' dans le menu d'édition des cartes"
 

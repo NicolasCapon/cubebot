@@ -171,13 +171,13 @@ class Deck(Base):
         return count
     
     @hybrid_method
-    def add_card(self, card, amount=1):
+    def add_card(self, card, amount=1, note=None):
         for deck_card in self.cards:
             if card.id == deck_card.card_id:
                 deck_card.amount += amount
                 return True
         
-        self.cards.append(DeckList(deck=self, card=card, amount=amount))
+        self.cards.append(DeckList(deck=self, card=card, amount=amount, note=note))
         return True
     
     @hybrid_method

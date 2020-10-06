@@ -79,7 +79,6 @@ class CubeHandler():
         # update_count = utils.update_cube(self.cube)
         # Create new game
         last_game = session.query(Game).order_by(Game.id.desc()).first()
-        """TODO copy games attributes + deck and decklist"""
         self.game = Game(state=GameStates.INIT.name)
         for deck in last_game.decks:
             d = Deck(player=deck.player, name=deck.name, description=deck.description)
@@ -361,6 +360,7 @@ class CubeHandler():
         context.dispatcher.add_handler(self.new_game_handler)
         context.dispatcher.add_handler(self.sign_handler)
         context.dispatcher.add_handler(self.sealed_handler)
+        context.dispatcher.add_handler(self.rematch_handler)
         logging.info("All states reset to INIT")
         return ConversationHandler.END
 
