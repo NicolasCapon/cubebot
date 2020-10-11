@@ -11,7 +11,6 @@ from datetime import datetime
 import deckstat_interface as deckstat
 from filters import restrict, UserType, DeckConv, GameStates
 from model import session, Player, Deck, Card, CubeList, DeckList
-from pn532 import PN532_SPI
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, MessageEntity
 from telegram.ext import CommandHandler, CallbackQueryHandler, ConversationHandler, MessageHandler, Filters
 from telegram.ext.dispatcher import run_async
@@ -22,18 +21,14 @@ class DeckHandler:
     Puis l'édition du deck peut se faire après
     """
 
-    def __init__(self, dispatcher, game):
+    def __init__(self, dispatcher, game, nfc_scan):
         self.game = game
+        self.nfc_scan = nfc_scan
         self.cubelist = session.query(CubeList).filter(CubeList.cube_id == game.cube.id,
                                                        CubeList.uid != None).all()
 
         self.current_user = None
         self.deck = None
-        # self.user_scanned = []
-        self.loop = False # Scan loop
-        # Scanning device config
-        self.pn532 = PN532_SPI(debug=False, reset=20, cs=4)
-        self.pn532.SAM_configuration()
         
         # Handlers
         self.scan_handler = CommandHandler("scan", self.new_deck)
@@ -120,35 +115,33 @@ class DeckHandler:
         context.dispatcher.add_handler(self.scan_buttons_handler)
         
         # Start scanning
-        self.loop = True
-        while self.loop:
-            # Check if a card is available to read
-            uid = self.pn532.read_passive_target(timeout=0.2)
-            # Try again if no card is available.
-            if uid is None:
-                continue
-            # Check if uid is known
-            card = next((c.card for c in self.cubelist if c.uid == uid), None)
-            if not card:
-                # unknown card detected
-                reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
-                context.bot.editMessageText(chat_id=user.id,
-                                            message_id=message.message_id,
-                                            text="Carte non reconnue, continue à scanner",
-                                            reply_markup=reply_markup)
-            # Check if card is already scanned
-            elif not any(card.id == deck_card.card_id for deck_card in self.deck.cards):
-                DeckList(deck=self.deck, card=card)
-                session.flush()
-                edit = f"Continue à scanner...\nCartes scannées ({len(self.deck.cards)}):"
-                for deck_card in self.deck.cards:
-                    edit += f"\n- {deck_card.card.name}"
-                reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
-                context.bot.editMessageText(chat_id=user.id,
-                                            message_id=message.message_id,
-                                            text=edit,
-                                            reply_markup=reply_markup)
-                sleep(0.1) # Avoid spam limit
+        self.nfc_scan.start(self.add_card_to_deck,
+                            context=context,
+                            user=user,
+                            message=message)
+
+    def add_card_to_deck(self, uid, context, user, message):
+        card = next((c.card for c in self.cubelist if c.uid == uid), None)
+        if not card:
+            # unknown card detected
+            reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
+            context.bot.editMessageText(chat_id=user.id,
+                                        message_id=message.message_id,
+                                        text="Carte non reconnue, continue à scanner",
+                                        reply_markup=reply_markup)
+        # Check if card is already scanned
+        elif not any(card.id == deck_card.card_id for deck_card in self.deck.cards):
+            DeckList(deck=self.deck, card=card)
+            session.flush()
+            edit = f"Continue à scanner...\nCartes scannées ({len(self.deck.cards)}):"
+            for deck_card in self.deck.cards:
+                edit += f"\n- {deck_card.card.name}"
+            reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
+            context.bot.editMessageText(chat_id=user.id,
+                                        message_id=message.message_id,
+                                        text=edit,
+                                        reply_markup=reply_markup)
+            sleep(0.1) # Avoid spam limit
                                
 
     def scan_buttons(self, update, context):
@@ -564,7 +557,7 @@ class DeckHandler:
     def reset_state(self, dispatcher):
         """Reset state of all conversation variables and handlers"""
         dispatcher.remove_handler(self.scan_buttons_handler)
-        self.loop = False
+        self.nfc_scan.stop()
         self.deck = None
         self.current_user = None
 

@@ -5,6 +5,7 @@ import requests
 import audio
 import utils
 import deckstat_interface as deckstat
+from nfc_scanner import NFC_Scanner
 from time import sleep
 from random import shuffle
 from filters import restrict, UserType, SignConv, WinConv, GameStates, SealedConv
@@ -25,6 +26,7 @@ class CubeHandler():
         # context.bot.send_message(chat_id=config.chat_id,
                                  # text=f"{update_count} mise(s) à jour effectuée(s).")
         # Create handlers
+        self.nfc_scan = NFC_Scanner()
         self.join_handler = CommandHandler("start", self.join)
         dispatcher.add_handler(self.join_handler)
         self.new_game_handler = CommandHandler("init", self.new_game)
@@ -59,7 +61,7 @@ class CubeHandler():
         session.commit()
         logging.info("New game created")
         # Enable deck handlers
-        self.deckHandler = DeckHandler(context.dispatcher, self.game)
+        self.deckHandler = DeckHandler(context.dispatcher, self.game, self.nfc_scan)
         # Next state is now available for admin
         context.dispatcher.add_handler(self.play_game_handler)
         # Send ok message
@@ -90,7 +92,7 @@ class CubeHandler():
         session.commit()
         logging.info(f"New game created from game [{last_game}]")
         # Enable deck handlers
-        self.deckHandler = DeckHandler(context.dispatcher, self.game)
+        self.deckHandler = DeckHandler(context.dispatcher, self.game, self.nfc_scan)
         # Next state is now available for admin
         context.dispatcher.add_handler(self.play_game_handler)
         # Send ok message
@@ -124,7 +126,23 @@ class CubeHandler():
         context.bot.send_message(chat_id=config.chat_id, text=text)
         
         # Start nfc sanner
-        audio.audio_scan(self.cube, context)
+        self.nfc_scan.start(self.game_scanner, context)
+
+    def game_scanner(self, uid, context):
+        cubelist, decklist = None, None
+        result = session.query(CubeList, DeckList).join(Deck).filter(CubeList.card_id == DeckList.card_id, Deck.game_id == self.game.id).filter(CubeList.cube_id == self.cube.id,
+                             CubeList.uid == uid).first()
+        print(result)
+        if result is not None:
+            cubelist, decklist = result
+            if decklist.note:
+                context.bot.send_message(chat_id=config.chat_id,
+                                         text=decklist.note)
+                if not cubelist.signature:
+                    sleep(3)
+            if cubelist.signature:
+                s = os.path.join(config.src_dir, "resources", "sounds", cubelist.signature)
+                audio.play_sound(s)
 
     def join(self, update, context):
         # first interaction with the bot
@@ -352,6 +370,7 @@ class CubeHandler():
                "\nPour recommencer avec ces decks: /rematch"
         update.message.reply_text(text=text)
         # RESET all states to init
+        self.nfc_scan.stop()
         context.job_queue.stop()
         context.dispatcher.remove_handler(self.win_handler)
         context.dispatcher.remove_handler(self.sign_handler)

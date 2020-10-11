@@ -296,6 +296,19 @@ def write_url_to_tag(url, scanner, block_size=4, write_size=16):
             return r
     return r
     
+def remove_games_from_cube(cube, state):
+    """Remove all games and associated decks from game with specified state"""
+    for game in cube.games:
+        if game.state == state:
+            for deck in game.decks:
+                deck.cards[:] = []
+                logging.info(f"Remove {deck}")
+                game.decks.remove(deck)
+            game.decks[:] = []
+            logging.info(f"Remove {game}")
+            cube.games.remove(game)
+    session.commit()
+    
 if __name__ == "__main__":
     """To test update :
     - create cube with last_update = 2020-04-01 13:58:21
@@ -304,13 +317,27 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                        # filename=config.log_file,
                         level=config.log_level)
+
+    cube = session.query(Cube).first()
     
-    import deckstat_interface as deckstat
-    deck = session.query(Deck).order_by(Deck.id.desc()).first()
-    deck.cards[0].note = "test"
-    session.commit()
-    print(deckstat.get_deck_url(deck))
-    # cube = session.query(Cube).first()
+##    players = session.query(Player).all()
+##    
+##    from model import Draft, Drafter, Booster
+##    drafters = [Drafter(p.id) for p in players]
+##    draft = Draft(cube, drafters)
+##    
+##    for drafter in drafters:
+##        player_booster = draft.get_booster(drafter)
+##        player_choice = drafter.choose(player_booster.cards[0])
+##        draft.add_choice(player_choice)
+##        print(drafter.pool)
+##    
+##    player_booster = draft.get_booster(drafters[0])
+##    player_choice = drafters[0].choose(player_booster.cards[0])
+##    draft.add_choice(player_choice)
+##    print(drafters[0].pool)
+
+
     # d = session.query(Deck).first()
     # print(d.game)
     # g = Game()

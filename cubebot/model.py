@@ -6,7 +6,8 @@ from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.sql.schema import ForeignKey
-
+from collections import deque
+from random import shuffle
 engine = create_engine(config.db, connect_args={'check_same_thread': False})
 Base = declarative_base()
 
@@ -225,6 +226,125 @@ class DeckList(Base):
         return f"<DeckList(deck_id={self.deck_id}, card_id={self.card_id}, "\
                f"amount={self.amount}, note={self.note})>"
 
+class Draft():
+    
+    id = 1
+    turn_order = 1
+    boosters = []
+    drafters = []
+    choices = []
+    round_num=0
+    booster_size=0
+
+    def __init__(self, cube, round_num=5, booster_size=9):
+        cube_cards = cube.cards
+        shuffle(cube_cards)
+        self.boosters = [Booster(cube_cards[i:i+booster_size]) for i in range(0, len(cube_cards), booster_size)]
+        self.round = None
+        self.round_num = round_num
+
+    def add_drafter(self, drafter):
+        self.drafters.append(drafter)
+        return self.drafters
+    
+    def start(self):
+        self.round = self.get_round()
+        
+    def get_round(self):
+        return deque([self.boosters.pop() for d in self.drafters])
+    
+    def get_drafter_by_id(self, id):
+        for drafter in drafters:
+            if drafter.id == id:
+                return drafter
+    
+    def pick(self, choice):
+        booster = self.round[self.drafters.index(choice.drafter)]
+        card = booster.cards.pop(booster.cards.index(choice.card))
+        choice.drafter.pool.append(card)
+        return booster
+        
+    def get_booster(self, drafter):
+        return self.round[self.drafters.index(drafter)]
+    
+    def add_choice(self, c):
+        for choice in self.choices:
+            if choice.drafter == c.drafter:
+                choice.card = c.card
+                return 1
+        self.choices.append(c)
+        if len(self.choices) == len(self.drafters) or len(self.choices) == len(self.round):
+            [self.pick(choice) for choice in self.choices]
+            self.rotate()
+            return -1
+    
+    def rotate(self):
+        for booster in self.round:
+            if booster:
+                self.round.rotate(self.turn_order)
+                self.choices = []
+                return True
+        # End of round
+        self.turn_order = -self.turn_order
+        # TODO Remove any phantom player (additionnal boosters)
+        
+        # Create new round
+        self.round_num -= 1
+        if self.round_num:
+            self.round = self.get_round()
+            return False
+        # End of draft    
+        else: return -1
+    
+    def add_booster(self, drafter):
+        # Tips, add booster before adding choice
+        i = self.drafters.index(drafter)
+        self.drafters.insert(i, 0)
+        self.round.insert(i, self.boosters.pop())
+        
+    def __repr__(self):
+        return f"<Draft(id={self.id}, turn_order={self.turn_order})>"
+            
+class Drafter():
+        
+    id = None
+    pool = []
+    draft = None
+    
+    def __init__(self, id, draft, pool=[]):
+        self.id = id
+        self.draft = draft
+        self.pool = pool
+        
+    def choose(self, card):
+        return self.draft.add_choice(Choice(self, card))
+        
+    def __repr__(self):
+        return f"<Drafter(id={self.id})>"
+        
+class Choice():
+    
+    def __init__(self, drafter, card):
+        self.drafter = drafter
+        self.card = card
+        
+    def __repr__(self):
+        return f"<Choice(drafter={self.drafter}, card={self.card})>"
+            
+            
+class Booster():
+    
+    id = 1
+    cards = []
+    
+    def __init__(self, cards, id=1):
+        self.id = id
+        self.cards = cards
+        
+    def __repr__(self):
+        return f"<Booster(id={self.id})>"
+        
+    
 Base.metadata.create_all(engine)
 DBSession = sessionmaker(bind=engine)
 session = DBSession()

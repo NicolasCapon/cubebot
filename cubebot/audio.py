@@ -4,9 +4,7 @@ import logging
 from vlc import State, Instance
 from time import sleep
 from pn532 import PN532_SPI
-import RPi.GPIO as GPIO
-from sqlalchemy import or_
-
+        
 def audio_scan(cube, context):
     import config
     from model import session, CubeList, DeckList, Card
