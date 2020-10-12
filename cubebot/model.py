@@ -161,6 +161,8 @@ class Deck(Base):
 
     cards = association_proxy('cards', 'decklist')# relationship("DeckList")
     
+    deckstats = None
+    
     def set_is_winner(self, is_winner):
         self.is_winner = is_winner
 

@@ -186,7 +186,7 @@ class DeckHandler:
             query.edit_message_text(text=text,
                                     parse_mode="HTML")
             context.user_data["deck"] = self.deck
-            context.user_data["deckstat"] = deckstat.get_deck_url(self.deck)
+            context.user_data['deck'].deckstats = deckstat.get_deck_url(self.deck)
             # Append user to list of player who already has scanned their deck
             # self.user_scanned.append(query.from_user.id)
             if not self.deck in self.game.decks:
@@ -218,8 +218,8 @@ class DeckHandler:
         return conv_handler
 
     def get_deck_info(self, context):
-        if context.user_data.get('deckstat', None):
-            deckstat_text = f"<a href='{context.user_data['deckstat']}'>{context.user_data['deck'].name}</a>"
+        if context.user_data['deck'].deckstats:
+            deckstat_text = f"<a href='{context.user_data['deck'].deckstats}'>{context.user_data['deck'].name}</a>"
         else:
             deckstat_text = None
         text = f"Titre: {deckstat_text if deckstat_text else context.user_data['deck'].name}\n" \
@@ -248,7 +248,7 @@ class DeckHandler:
         elif not context.user_data.get("deck", None):
             # If user has deck but not in context_data, had it
             context.user_data['deck'] = deck
-            context.user_data["deckstat"] = deckstat.get_deck_url(deck)
+            context.user_data['deck'].deckstats = deckstat.get_deck_url(deck)
 
         # Send deck_editor menu
         context.bot.send_message(chat_id=update.message.from_user.id,
@@ -368,7 +368,7 @@ class DeckHandler:
             else:
                 errors.append((cardname, "carte absente du deck"))
         session.commit()
-        if modif: context.user_data['deckstat'] = deckstat.get_deck_url(context.user_data['deck'])
+        if modif: context.user_data['deck'].deckstats = deckstat.get_deck_url(context.user_data['deck'])
         text = "J'ai bien modifié les notes de ton deck."
         if errors:
             text +=  " Cependant j'ai un problème avec les cartes suivantes:"
@@ -500,7 +500,7 @@ class DeckHandler:
         if answer == "REMOVE ALL CARDS":
             context.user_data['deck'].cards[:] = []
             session.commit()
-            context.user_data['deckstat'] = None
+            context.user_data['deck'].deckstats = None
             text = "Jai bien supprimé toutes les cartes de ton deck.\n"
             update.message.reply_text(text=text+self.get_deck_info(context),
                                       reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),
@@ -550,7 +550,7 @@ class DeckHandler:
             text +=  " Cependant je n'ai pas trouvé les cartes suivantes:"
             for cardname, error in errors:
                 text += f"\n- {cardname} ({error})"
-        if modif: context.user_data['deckstat'] = deckstat.get_deck_url(context.user_data['deck'])
+        if modif: context.user_data['deck'].deckstats = deckstat.get_deck_url(context.user_data['deck'])
         text += "\n" + self.get_deck_info(context)
         update.message.reply_text(text=text,
                                   reply_markup=InlineKeyboardMarkup(self.get_deck_keyboard()),

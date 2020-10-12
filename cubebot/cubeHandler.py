@@ -68,6 +68,9 @@ class CubeHandler():
         text = "Les joueurs peuvent commencer à scanner leur deck en tapant /scan."
         context.bot.send_message(chat_id=config.chat_id,
                                  text=text)
+        sleep(0.5)
+        context.bot.send_message(chat_id=config.admin_id,
+                                 text="Pour lancer la partie: /play [mode]")
     
     @restrict(UserType.ADMIN)
     def rematch(self, update, context):
@@ -98,7 +101,10 @@ class CubeHandler():
         # Send ok message
         text = "Les joueurs peuvent visualiser et éditer leur ancien deck avec la commande: /mydeck."
         context.bot.send_message(chat_id=config.chat_id,
-                                 text=text)    
+                                 text=text)
+        sleep(0.5)
+        context.bot.send_message(chat_id=config.admin_id,
+                                 text="Pour lancer la partie: /play [mode]")
     
     @restrict(UserType.ADMIN)
     @run_async
@@ -124,6 +130,9 @@ class CubeHandler():
         logging.info("Game start")
         text = "La partie peut commencer !"
         context.bot.send_message(chat_id=config.chat_id, text=text)
+        sleep(0.5)
+        context.bot.send_message(chat_id=config.admin_id,
+                                 text="Pour terminer la partie: /win")
         
         # Start nfc sanner
         self.nfc_scan.start(self.game_scanner, context)
@@ -365,6 +374,15 @@ class CubeHandler():
         self.game.description = answer
         session.commit()
         logging.info("Game description saved")
+        medal_emoji = " \U0001F947"
+        text = "Bien joué à tous ! Les decks étaient les suivants:"
+        for deck in self.game.decks:
+            text += f"\n- <a href='deck.deckstats'>Deck de {deck.player.name}</a> {medal_emoji if deck.is_winner else ''}"
+        text += f"\nRésumé: <i>{self.game.description}</i>"
+        sleep(0.5)
+        context.bot.send_message(chat_id=config.chat_id,
+                                 text=text,
+                                 parse_mode="HTML")
         text = "Merci, la partie est bien enregistrée et terminée."\
                "\nPour en lancer une autre: /init"\
                "\nPour recommencer avec ces decks: /rematch"
