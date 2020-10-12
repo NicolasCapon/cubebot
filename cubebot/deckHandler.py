@@ -33,19 +33,19 @@ class DeckHandler:
         # Handlers
         self.scan_handler = CommandHandler("scan", self.new_deck)
         dispatcher.add_handler(self.scan_handler)
-        self.scan_buttons_handler = CallbackQueryHandler(self.scan_buttons)
+        self.scan_buttons_handler = CallbackQueryHandler(self.scan_buttons, pattern=r"scan_button=(\d)")
         # Conversation Handler for deck title and description
         self.deck_conv_handler = self.deck_conv_handler()
         dispatcher.add_handler(self.deck_conv_handler)
     
     def get_scan_keyboard(self, count=0):
         if count:
-            keyboard = [[InlineKeyboardButton("Corriger", callback_data='1'),
-                        InlineKeyboardButton("Annuler", callback_data='0')],
-                        [InlineKeyboardButton("Soumettre Deck", callback_data='2')]]
+            keyboard = [[InlineKeyboardButton("Corriger", callback_data='scan_button=1'),
+                        InlineKeyboardButton("Annuler", callback_data='scan_button=0')],
+                        [InlineKeyboardButton("Soumettre Deck", callback_data='scan_button=2')]]
         else:
-            keyboard = [[InlineKeyboardButton("Annuler", callback_data='0'),
-                        InlineKeyboardButton("Soumettre", callback_data='2')]]
+            keyboard = [[InlineKeyboardButton("Annuler", callback_data='scan_button=0'),
+                        InlineKeyboardButton("Soumettre", callback_data='scan_button=2')]]
         return keyboard
         
     def get_deck_keyboard(self):
@@ -53,20 +53,20 @@ class DeckHandler:
         game state avoid modifying notes once the game is on
         """
         if self.game.state == GameStates.INIT.name :
-                keyboard = [[InlineKeyboardButton("Nom", callback_data=DeckConv.NAME.name),
-                         InlineKeyboardButton("Description", callback_data=DeckConv.DESCR.name)],
-                         [InlineKeyboardButton("Cartes", callback_data=DeckConv.CARDS.name),
-                         InlineKeyboardButton("Notes", callback_data=DeckConv.NOTE.name),
-                         InlineKeyboardButton("Sign", callback_data=DeckConv.SIGN.name),
-                         InlineKeyboardButton("Tokens", callback_data=DeckConv.TOKEN.name)],
-                         [InlineKeyboardButton("Sortir", callback_data=DeckConv.CANCEL.name)]]
+                keyboard = [[InlineKeyboardButton("Nom", callback_data="deck_action="+DeckConv.NAME.name),
+                         InlineKeyboardButton("Description", callback_data="deck_action="+DeckConv.DESCR.name)],
+                         [InlineKeyboardButton("Cartes", callback_data="deck_action="+DeckConv.CARDS.name),
+                         InlineKeyboardButton("Notes", callback_data="deck_action="+DeckConv.NOTE.name),
+                         InlineKeyboardButton("Sign", callback_data="deck_action="+DeckConv.SIGN.name),
+                         InlineKeyboardButton("Tokens", callback_data="deck_action="+DeckConv.TOKEN.name)],
+                         [InlineKeyboardButton("Sortir", callback_data="deck_action="+DeckConv.CANCEL.name)]]
         else:
-                keyboard = [[InlineKeyboardButton("Nom", callback_data=DeckConv.NAME.name),
-                         InlineKeyboardButton("Description", callback_data=DeckConv.DESCR.name)],
-                         [InlineKeyboardButton("Cartes", callback_data=DeckConv.CARDS.name),
-                         InlineKeyboardButton("Sign", callback_data=DeckConv.SIGN.name),
-                         InlineKeyboardButton("Tokens", callback_data=DeckConv.TOKEN.name)],
-                         [InlineKeyboardButton("Sortir", callback_data=DeckConv.CANCEL.name)]]
+                keyboard = [[InlineKeyboardButton("Nom", callback_data="deck_action="+DeckConv.NAME.name),
+                         InlineKeyboardButton("Description", callback_data="deck_action="+DeckConv.DESCR.name)],
+                         [InlineKeyboardButton("Cartes", callback_data="deck_action="+DeckConv.CARDS.name),
+                         InlineKeyboardButton("Sign", callback_data="deck_action="+DeckConv.SIGN.name),
+                         InlineKeyboardButton("Tokens", callback_data="deck_action="+DeckConv.TOKEN.name)],
+                         [InlineKeyboardButton("Sortir", callback_data="deck_action="+DeckConv.CANCEL.name)]]
         return keyboard
         
     @restrict(UserType.PLAYER)
@@ -108,6 +108,8 @@ class DeckHandler:
             self.deck = Deck(player=self.current_user, name=f"Deck de {self.current_user.name}", game=self.game)
             session.add(self.deck)
         text = f"Yo {self.current_user.name}, commence à scanner tes cartes !"
+        for deck_card in self.deck.cards:
+            text += f"\n- {deck_card.card.name}"
         reply_markup = InlineKeyboardMarkup(self.get_scan_keyboard(len(self.deck.cards)))
         message = context.bot.send_message(chat_id=user.id,
                                            text=text,
@@ -152,7 +154,10 @@ class DeckHandler:
         - Submit and save scanned cards
         """
         query = update.callback_query
-        if query.data == "0":
+        reg = re.compile(r"scan_button=(\d)")
+        match = reg.findall(query.data)[0]
+        
+        if match == "0":
             # Cancel is called
             text = "Scan annulé, ton deck n'a pas été enregistré.\n"\
                    "Pour recommencer: /scan"
@@ -161,7 +166,7 @@ class DeckHandler:
                                     parse_mode="HTML")
             self.reset_state(context.dispatcher)
             
-        if query.data == "1" and self.deck.cards:
+        if match == "1" and self.deck.cards:
             # Remove last element of decklist
             # del self.deck.cards[-1]
             self.deck.cards.remove(self.deck.cards[-1])
@@ -174,7 +179,7 @@ class DeckHandler:
             query.edit_message_text(text=edit,
                                     reply_markup=reply_markup)
 
-        elif query.data == "2":
+        elif match == "2":
             # Submit decklist
             text = "J'ai bien sauvegardé ton deck, pour le modifier "\
                    "ou consulter des infos le concernant:\n/mydeck"
@@ -197,14 +202,14 @@ class DeckHandler:
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('mydeck', self.set_deck)],
             states={
-                DeckConv.ACTION: [CallbackQueryHandler(self.get_deck_action)],
+                DeckConv.ACTION: [CallbackQueryHandler(self.get_deck_action, pattern=r"deck_action=([A-Z]*)")],
                 DeckConv.NAME: [MessageHandler(Filters.text & (~ Filters.command), self.set_deck_name)],
                 DeckConv.DESCR: [MessageHandler(Filters.text & (~ Filters.command), self.set_deck_desc)],
-                DeckConv.TOKEN: [CallbackQueryHandler(self.get_deck_action)],
+                DeckConv.TOKEN: [CallbackQueryHandler(self.get_deck_action, pattern=r"deck_action=([A-Z]*)")],
                 DeckConv.NOTE: [MessageHandler(Filters.text & (~ Filters.command), self.set_card_note)],
                 DeckConv.CARDS: [MessageHandler(Filters.text & (~ Filters.command), self.set_deck_cards)],
                 DeckConv.SIGN: [MessageHandler(Filters.text & (~ Filters.command), self.choose_card)],
-                DeckConv.CONFIRM: [CallbackQueryHandler(self.confirm_card)],
+                DeckConv.CONFIRM: [CallbackQueryHandler(self.confirm_card, pattern=r"confirm_card=(\d)")],
                 DeckConv.SENDING: [MessageHandler(Filters.audio | Filters.voice | Filters.entity(MessageEntity.URL) & (~ Filters.command), self.save_signature)]
                 },
             fallbacks=[CommandHandler('stop', self.stop)],
@@ -255,8 +260,10 @@ class DeckHandler:
     def get_deck_action(self, update, context):
         """InlineKeyboardMarkup response"""
         query = update.callback_query
+        reg = re.compile(r"deck_action=([A-Z]*)")
+        match = reg.findall(query.data)[0]
         
-        if query.data == DeckConv.NAME.name:
+        if match == DeckConv.NAME.name:
             name = context.user_data['deck'].name
             text = f"Le nom actuel de ton deck est <b>{name}</b>, "\
                      "envoie moi un nouveau nom pour ton deck. (/stop pour quitter)"
@@ -264,7 +271,7 @@ class DeckHandler:
                                     parse_mode="HTML")
             return DeckConv.NAME
         
-        elif query.data == DeckConv.DESCR.name:
+        elif match == DeckConv.DESCR.name:
             description = context.user_data['deck'].description
             text = f"La description actuelle de ton deck est {'<b>' + description + '</b>' if description else 'vide' }, "\
                      "envoie moi une nouvelle description pour ton deck. (/stop pour quitter)"
@@ -272,7 +279,7 @@ class DeckHandler:
                                     parse_mode="HTML")
             return DeckConv.DESCR
         
-        elif query.data == DeckConv.NOTE.name:
+        elif match == DeckConv.NOTE.name:
             text = "Envoie moi les cartes (les premières lettres de la cartes suffisent) "\
                    "auxquelles tu souhaites ajouter une note sous cette forme (/stop pour quitter):\n"\
                    "Urza (ma note)\nRichard (ma 2e note)"
@@ -280,7 +287,7 @@ class DeckHandler:
                                     parse_mode="HTML")
             return DeckConv.NOTE
         
-        elif query.data == DeckConv.CARDS.name:
+        elif match == DeckConv.CARDS.name:
             text = "Envoie moi les cartes (les premières lettres de la cartes suffisent) "\
                    "que tu souhaites ajouter ou retirer sous cette forme (/stop pour quitter):\n"\
                    "+ Urza \n- Richard\n+3 Plains\n-2 Island"
@@ -288,14 +295,14 @@ class DeckHandler:
                                     parse_mode="HTML")
             return DeckConv.CARDS
         
-        elif query.data == DeckConv.SIGN.name:
+        elif match == DeckConv.SIGN.name:
             text = "Envoie moi le nom (les premières lettres de la cartes suffisent) "\
                    "de la carte que tu souhaites signer."
             query.edit_message_text(text=text,
                                     parse_mode="HTML")
             return DeckConv.SIGN
             
-        elif query.data == DeckConv.TOKEN.name:
+        elif match == DeckConv.TOKEN.name:
             deck = session.query(Deck).filter(Deck.id==context.user_data["deck"].id).first()
             text = "Voici la liste des tokens dont tu auras besoin:\n"
             tokens = []
@@ -316,7 +323,7 @@ class DeckHandler:
                                     parse_mode="HTML")
             return DeckConv.ACTION
         
-        elif query.data == DeckConv.CANCEL.name:
+        elif match == DeckConv.CANCEL.name:
             text = "Pour modifier ou voir de nouveau ton deck: /mydeck"
             query.edit_message_text(text=text,
                                     parse_mode="HTML")
@@ -413,12 +420,15 @@ class DeckHandler:
 
     def confirm_card(self, update, context):
         query = update.callback_query
-        if query.data == "1":
+        reg = re.compile(r"confirm_card=(\d)")
+        match = reg.findall(query.data)[0]
+        
+        if match == "1":
             text = "Ok, envoie moi un fichier audio pour signer ta carte.\n(/stop pour sortir)"
             query.edit_message_text(text=text)
             return DeckConv.SENDING
 
-        elif query.data == "2":
+        elif match == "2":
             text = "No problemo, renvoie moi le nom de ta carte.\n(/stop pour sortir)"
             query.edit_message_text(text=text)
             return DeckConv.SIGN
@@ -508,7 +518,6 @@ class DeckHandler:
             if len(s_note) == 2:
                 line = s_note[0]
                 note = s_note[1]
-                print(note)
             matches = reg.findall(line)
             if matches:
                 mode, num, set_code, cardname = matches[0]
@@ -536,7 +545,6 @@ class DeckHandler:
                 if not r: errors.append((cardname, "carte absente du deck"))
                 modif += 1
         session.commit()
-        print(context.user_data['deck'].cards)
         text = "J'ai bien modifié le contenu de ton deck."
         if errors:
             text +=  " Cependant je n'ai pas trouvé les cartes suivantes:"
