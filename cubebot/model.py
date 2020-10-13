@@ -235,12 +235,14 @@ class Draft():
     boosters = []
     drafters = []
     choices = []
-    round_num=0
-    booster_size=0
+    round_num = 0
+    round_count = 0
+    booster_size = 0
 
     def __init__(self, cube, round_num=5, booster_size=9):
-        cube_cards = cube.cards
+        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == cube.id, Card.type_line != "Basic Land").all()
         shuffle(cube_cards)
+        # TODO: remove Booster where len is not equal to booster_size
         self.boosters = [Booster(cube_cards[i:i+booster_size]) for i in range(0, len(cube_cards), booster_size)]
         self.round = None
         self.round_num = round_num
@@ -253,10 +255,13 @@ class Draft():
         self.round = self.get_round()
         
     def get_round(self):
-        return deque([self.boosters.pop() for d in self.drafters])
+        if self.round_count < self.round_num:
+            print("NEW ROUND")
+            self.round_count += 1
+            return deque([self.boosters.pop() for d in self.drafters])
     
     def get_drafter_by_id(self, id):
-        for drafter in drafters:
+        for drafter in self.drafters:
             if drafter.id == id:
                 return drafter
     
@@ -273,16 +278,16 @@ class Draft():
         for choice in self.choices:
             if choice.drafter == c.drafter:
                 choice.card = c.card
-                return 1
+                return False
         self.choices.append(c)
         if len(self.choices) == len(self.drafters) or len(self.choices) == len(self.round):
             [self.pick(choice) for choice in self.choices]
             self.rotate()
-            return -1
+            return True
     
     def rotate(self):
         for booster in self.round:
-            if booster:
+            if booster.cards:
                 self.round.rotate(self.turn_order)
                 self.choices = []
                 return True
@@ -291,12 +296,7 @@ class Draft():
         # TODO Remove any phantom player (additionnal boosters)
         
         # Create new round
-        self.round_num -= 1
-        if self.round_num:
-            self.round = self.get_round()
-            return False
-        # End of draft    
-        else: return -1
+        self.round = self.get_round()
     
     def add_booster(self, drafter):
         # Tips, add booster before adding choice

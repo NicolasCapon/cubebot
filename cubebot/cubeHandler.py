@@ -11,6 +11,7 @@ from random import shuffle
 from filters import restrict, UserType, SignConv, WinConv, GameStates, SealedConv
 from model import session, Cube, CubeList, Game, Player, Card, Deck, DeckList
 from deckHandler import DeckHandler
+from draftHandler import DraftHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity, ReplyKeyboardRemove
 from telegram.ext import Filters, CommandHandler, ConversationHandler, MessageHandler, CallbackQueryHandler
 from telegram.ext.dispatcher import run_async
@@ -41,9 +42,10 @@ class CubeHandler():
         # model
         self.cube, self.game = None, None
         # Sealed
-        self.players, self.sealed_players = [], []
-        self.sealed_handler = self.get_sealed_convHandler()
-        dispatcher.add_handler(self.sealed_handler)
+        self.draftHandler = DraftHandler(dispatcher)
+        # self.players, self.sealed_players = [], []
+        # self.sealed_handler = self.get_sealed_convHandler()
+        # dispatcher.add_handler(self.sealed_handler)
         
     @restrict(UserType.ADMIN)
     def new_game(self, update, context):
