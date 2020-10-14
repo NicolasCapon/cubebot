@@ -320,11 +320,30 @@ if __name__ == "__main__":
 
     cube = session.query(Cube).first()
     
-##    players = session.query(Player).all()
-##    
-##    from model import Draft, Drafter, Booster
-##    drafters = [Drafter(p.id) for p in players]
-##    draft = Draft(cube, drafters)
+    players = session.query(Player).all()
+    from model import Draft, Drafter, Booster
+    draft = Draft(cube, round_num=3, booster_size=3)
+    drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
+    draft.start()
+    for drafter in draft.drafters:
+        b = draft.get_booster(drafter)
+        print(drafter.name, " choose")
+        drafter.choose(b.cards[0])
+    
+    for drafter in draft.drafters:
+        b = draft.get_booster(drafter)
+        print(drafter.name, " choose")
+        drafter.choose(b.cards[0])
+        
+    for drafter in draft.drafters:
+        b = draft.get_booster(drafter)
+        print(drafter.name, " choose")
+        drafter.choose(b.cards[0])
+    
+    for drafter in draft.drafters:
+        print(drafter.name)
+        for card in drafter.pool:
+            print(card.name)
 ##    
 ##    for drafter in drafters:
 ##        player_booster = draft.get_booster(drafter)

@@ -231,10 +231,11 @@ class DeckList(Base):
 class Draft():
     
     id = 1
-    turn_order = 1
+    turn_order = -1
     boosters = []
     drafters = []
     choices = []
+    round = None
     round_num = 0
     round_count = 0
     booster_size = 0
@@ -244,59 +245,59 @@ class Draft():
         shuffle(cube_cards)
         # TODO: remove Booster where len is not equal to booster_size
         self.boosters = [Booster(cube_cards[i:i+booster_size]) for i in range(0, len(cube_cards), booster_size)]
-        self.round = None
         self.round_num = round_num
 
     def add_drafter(self, drafter):
+        drafter.draft = self
         self.drafters.append(drafter)
         return self.drafters
     
     def start(self):
+        print("DRAFT START")
+        print(self)
         self.round = self.get_round()
         
     def get_round(self):
         if self.round_count < self.round_num:
-            print("NEW ROUND")
+            print(">>>>>>>>>>>>>>>>> NEW ROUND >>>>>>>>>>>>>>>>>")
+            self.turn_order = -self.turn_order
             self.round_count += 1
             return deque([self.boosters.pop() for d in self.drafters])
+        else:
+            return []
     
     def get_drafter_by_id(self, id):
         for drafter in self.drafters:
             if drafter.id == id:
                 return drafter
-    
-    def pick(self, choice):
-        booster = self.round[self.drafters.index(choice.drafter)]
-        card = booster.cards.pop(booster.cards.index(choice.card))
-        choice.drafter.pool.append(card)
-        return booster
         
     def get_booster(self, drafter):
-        return self.round[self.drafters.index(drafter)]
+        i = self.drafters.index(drafter)
+        return self.round[i] if i < len(self.round) else None
     
-    def add_choice(self, c):
-        for choice in self.choices:
-            if choice.drafter == c.drafter:
-                choice.card = c.card
-                return False
-        self.choices.append(c)
-        if len(self.choices) == len(self.drafters) or len(self.choices) == len(self.round):
-            [self.pick(choice) for choice in self.choices]
-            self.rotate()
-            return True
+    def control_choices(self):
+        if all(drafter.choice for drafter in self.drafters):
+            for drafter in self.drafters:
+                drafter.pick()
+            return self.rotate_boosters()
+        else:
+            return False, False
     
-    def rotate(self):
-        for booster in self.round:
-            if booster.cards:
-                self.round.rotate(self.turn_order)
-                self.choices = []
-                return True
-        # End of round
-        self.turn_order = -self.turn_order
-        # TODO Remove any phantom player (additionnal boosters)
+    def rotate_boosters(self):
+        is_new_booster = False
+        is_new_round = False
+        if any(booster.cards for booster in self.round):
+            # If a booster still has cards, pass it to the next player
+            print("================== ROTATE ==================")
+            self.round.rotate(self.turn_order)
+            is_new_booster = True
+        else:
+            # Create new round
+            self.round = self.get_round()
+            is_new_booster = True
+            is_new_round = True
         
-        # Create new round
-        self.round = self.get_round()
+        return (is_new_booster, is_new_round)
     
     def add_booster(self, drafter):
         # Tips, add booster before adding choice
@@ -312,17 +313,32 @@ class Drafter():
     id = None
     pool = []
     draft = None
+    choice = None
+    data = None
     
-    def __init__(self, id, draft, pool=[]):
+    def __init__(self, id, name):
         self.id = id
-        self.draft = draft
-        self.pool = pool
+        self.name = name
         
     def choose(self, card):
-        return self.draft.add_choice(Choice(self, card))
+        self.choice = Choice(self, card)
+        return self.draft.control_choices()
         
+    def pick(self):
+        booster = self.get_booster()
+        if self.choice and booster:
+            print(self.choice)
+            booster.cards.remove(self.choice.card)
+            self.pool.append(self.choice.card)
+            self.choice = None
+            return True
+    
+    def get_booster(self):
+        i = self.draft.drafters.index(self)
+        return self.draft.round[i] if i < len(self.draft.round) else None
+    
     def __repr__(self):
-        return f"<Drafter(id={self.id})>"
+        return f"<Drafter(id={self.id}, name={self.name})>"
         
 class Choice():
     

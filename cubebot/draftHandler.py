@@ -1,5 +1,6 @@
 ﻿import re
 import deckstat_interface as deckstat
+from time import sleep
 from random import shuffle
 from filters import restrict, SealedConv, UserType
 from functools import partial
@@ -16,7 +17,6 @@ class DraftHandler():
         # Draft
         self.draft = None
         self.drafted_card_handler = None
-        self.messages_id = []
         self.draft_handler = self.get_select_player_convHandler("draft", self.start_draft)
         dispatcher.add_handler(self.draft_handler)
         """TODO: mutualiser le select player handler"""
@@ -121,16 +121,38 @@ class DraftHandler():
         update.callback_query.edit_message_text(text=final_text)
 
     def get_booster_dialogue(self, drafter, card_choice=None, is_new_booster=True, row_length=3):
-        text = f"Ronde {self.draft.round_count}/{self.draft.round_num}. "
-        if is_new_booster:
-            text += "Selectionne une carte :\n"
+        text = f"<u>Ronde {self.draft.round_count}/{self.draft.round_num}</u>"
+        if drafter.pool:
+            text += f"\nMon dernier pick: <a href='https://scryfall.com/card/{drafter.pool[-1].scryfall_id}'>{drafter.pool[-1].name}</a>"
+        
+        url = drafter.data["deckstats"]
+        if url:
+            emoji_chart = "\U0001F4CA"
+            text += f"\nVoir mon pool: <a href='{url}'>{emoji_chart}</a>"
+        
+        if is_new_booster or not card_choice:
+            text += "\nSelectionne une carte :\n"
         else:
-            text += "Choix pris en compte. En attente des autres joueurs...\n"
-        keyboard = []
-        # drafter = self.draft.get_drafter_by_id(drafter.id)
+            text += "\nChoix pris en compte. En attente des autres joueurs...\n"
+        
+        booster = drafter.get_booster()
+        if not booster:
+            text = f"Draft terminé. Voici ton <a href='{url}'>pool</a>"
+            # TODO : function to clean draft data and handlers
+            self.draft = None
+            self.dispatcher.remove_handler(self.drafted_card_handler)
+            # Add entry point
+            self.dispatcher.add_handler(self.draft_handler)
+            logging.info("Draft ends")
+            return text, None
+        
+        cards = booster.cards
+        if not cards:
+            text += "Pas de cartes à drafter pour le moment."
+            return text, None
+        
         choice_emoji = "\U0001F448"
-        cards = self.draft.get_booster(drafter).cards
-        print(f"len cards: {len(cards)}")
+        keyboard = []
         for i in range(0, len(cards), row_length):
             row = []
             max = i + row_length
@@ -147,42 +169,48 @@ class DraftHandler():
         
         
     def start_draft(self, update, context):
+        # Remove entry point
+        self.dispatcher.remove_handler(self.draft_handler)
         cube = session.query(Cube).first()
-        self.draft = Draft(cube)
-        [self.draft.add_drafter(Drafter(s.id, self.draft)) for s in self.subscribers]
+        self.draft = Draft(cube, round_num=3, booster_size=3)
+        [self.draft.add_drafter(Drafter(s.id, s.name)) for s in self.subscribers]
         self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=r"card_id=(\d*)")
         self.dispatcher.add_handler(self.drafted_card_handler)
         self.draft.start()
 
         for drafter in self.draft.drafters:
+            drafter.data = {"query": None, "deckstats": None}
             text, reply_markup = self.get_booster_dialogue(drafter)
-            msg_id = context.bot.send_message(chat_id=drafter.id,
-                                              text=text,
-                                              reply_markup=reply_markup,
-                                              parse_mode="HTML",
-                                              disable_web_page_preview=True)
-            self.messages_id.append({"user_id": drafter.id, "msg_id": msg_id})
+            context.bot.send_message(chat_id=drafter.id,
+                                     text=text,
+                                     reply_markup=reply_markup,
+                                     parse_mode="HTML",
+                                     disable_web_page_preview=True)
     
     
     def choose_card(self, update, context):
         query = update.callback_query
-        user = query.from_user
+        drafter = self.draft.get_drafter_by_id(query.from_user.id)
         reg = re.compile(r"card_id=(\d*)")
         match = int(reg.findall(query.data)[0])
         card = session.query(Card).filter(Card.id == match).first()
-        if not context.user_data.get("drafter", None):
-            # First time user use the keyboard
-            context.user_data["drafter"] = self.draft.get_drafter_by_id(user.id)
-            is_new_booster = context.user_data["drafter"].choose(card)
-            for msg_id in self.messages_id:
-                if msg_id["user_id"] == user.id:
-                    context.user_data["msg_id"] = msg_id["msg_id"]
+        is_new_booster, is_new_round = drafter.choose(card)
+        drafter.data["query"] = query
+        
+        # If new booster or new round, we update reply markup for all drafters
+        if is_new_booster or is_new_round:
+            for drafter in self.draft.drafters:
+                if len(drafter.pool) > 1:
+                    drafter.data["deckstats"] = deckstat.get_sealed_url(drafter.pool, drafter)
+                    sleep(0.5)
+                text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster=is_new_booster)
+                drafter.data["query"].edit_message_text(text=text,
+                                                        reply_markup=reply_markup,
+                                                        parse_mode="HTML",
+                                                        disable_web_page_preview=True)
         else:
-            is_new_booster = context.user_data["drafter"].choose(card)
-        
-        
-        text, reply_markup = self.get_booster_dialogue(context.user_data["drafter"], card, is_new_booster)
-        query.edit_message_text(text=text,
-                                reply_markup=reply_markup,
-                                parse_mode="HTML",
-                                disable_web_page_preview=True)
+            text, reply_markup = self.get_booster_dialogue(drafter, card, is_new_booster)
+            query.edit_message_text(text=text,
+                                    reply_markup=reply_markup,
+                                    parse_mode="HTML",
+                                    disable_web_page_preview=True)
