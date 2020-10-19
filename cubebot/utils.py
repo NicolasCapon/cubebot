@@ -4,7 +4,7 @@ import os
 import scryfall
 import ndef
 from tqdm import tqdm
-from model import session, Cube, CubeList, Card, Game, Player, Deck, DeckList, Token
+from model import *
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import csv
@@ -321,29 +321,33 @@ if __name__ == "__main__":
     cube = session.query(Cube).first()
     
     players = session.query(Player).all()
-    from model import Draft, Drafter, Booster
-    draft = Draft(cube, round_num=3, booster_size=3)
-    drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
-    draft.start()
-    for drafter in draft.drafters:
-        b = draft.get_booster(drafter)
-        print(drafter.name, " choose")
-        drafter.choose(b.cards[0])
-    
-    for drafter in draft.drafters:
-        b = draft.get_booster(drafter)
-        print(drafter.name, " choose")
-        drafter.choose(b.cards[0])
-        
-    for drafter in draft.drafters:
-        b = draft.get_booster(drafter)
-        print(drafter.name, " choose")
-        drafter.choose(b.cards[0])
-    
-    for drafter in draft.drafters:
-        print(drafter.name)
-        for card in drafter.pool:
-            print(card.name)
+    booster_size = 25
+    draft = Draft(cube, round_num=3, booster_size=booster_size)
+    print(len(draft.boosters))
+    for booster in draft.boosters:
+        if len(booster.cards) != booster_size:
+            print(booster)
+##    drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
+##    draft.start()
+##    for drafter in draft.drafters:
+##        b = draft.get_booster(drafter)
+##        print(drafter.name, " choose")
+##        drafter.choose(b.cards[0])
+##    
+##    for drafter in draft.drafters:
+##        b = draft.get_booster(drafter)
+##        print(drafter.name, " choose")
+##        drafter.choose(b.cards[0])
+##        
+##    for drafter in draft.drafters:
+##        b = draft.get_booster(drafter)
+##        print(drafter.name, " choose")
+##        drafter.choose(b.cards[0])
+##    
+##    for drafter in draft.drafters:
+##        print(drafter.name)
+##        for card in drafter.pool:
+##            print(card.name)
 ##    
 ##    for drafter in drafters:
 ##        player_booster = draft.get_booster(drafter)

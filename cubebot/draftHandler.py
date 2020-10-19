@@ -1,5 +1,6 @@
 ﻿import re
 import deckstat_interface as deckstat
+import logging
 from time import sleep
 from random import shuffle
 from filters import restrict, SealedConv, UserType
@@ -64,6 +65,7 @@ class DraftHandler():
         if query.data == "0":
             text = "Limité annulé, pour recommencer: /sealed"
             query.edit_message_text(text=text)
+            self.subscribers = []
             return ConversationHandler.END
         
         elif query.data == "1":
@@ -120,7 +122,7 @@ class DraftHandler():
         
         update.callback_query.edit_message_text(text=final_text)
 
-    def get_booster_dialogue(self, drafter, card_choice=None, is_new_booster=True, row_length=3):
+    def get_booster_dialogue(self, drafter, is_new_booster=True, row_length=3):
         text = f"<u>Ronde {self.draft.round_count}/{self.draft.round_num}</u>"
         if drafter.pool:
             text += f"\nMon dernier pick: <a href='https://scryfall.com/card/{drafter.pool[-1].scryfall_id}'>{drafter.pool[-1].name}</a>"
@@ -130,20 +132,19 @@ class DraftHandler():
             emoji_chart = "\U0001F4CA"
             text += f"\nVoir mon pool: <a href='{url}'>{emoji_chart}</a>"
         
-        if is_new_booster or not card_choice:
+        if is_new_booster or not drafter.choice:
             text += "\nSelectionne une carte :\n"
         else:
             text += "\nChoix pris en compte. En attente des autres joueurs...\n"
         
         booster = drafter.get_booster()
         if not booster:
+            session.commit()
             text = f"Draft terminé. Voici ton <a href='{url}'>pool</a>"
             # TODO : function to clean draft data and handlers
-            self.draft = None
             self.dispatcher.remove_handler(self.drafted_card_handler)
             # Add entry point
             self.dispatcher.add_handler(self.draft_handler)
-            logging.info("Draft ends")
             return text, None
         
         cards = booster.cards
@@ -158,10 +159,11 @@ class DraftHandler():
             max = i + row_length
             if max > len(cards): max = len(cards)
             for n in range(i, max, 1):
-                if cards[n] == card_choice:
+                if drafter.choice and cards[n] == drafter.choice.card:
                     text += f"{n+1}) <b><a href='https://scryfall.com/card/{cards[n].scryfall_id}'>{cards[n].name}</a></b>{choice_emoji}\n"
                 else:
-                    row.append(InlineKeyboardButton(f"{n+1}", callback_data=f"card_id={cards[n].id}"))
+                    callback_data = f"[{self.draft.id}]card_id={cards[n].id}"
+                    row.append(InlineKeyboardButton(f"{n+1}", callback_data=callback_data))
                     text += f"{n+1}) <a href='https://scryfall.com/card/{cards[n].scryfall_id}'>{cards[n].name}</a>\n"
             keyboard.append(row)
 
@@ -172,11 +174,14 @@ class DraftHandler():
         # Remove entry point
         self.dispatcher.remove_handler(self.draft_handler)
         cube = session.query(Cube).first()
-        self.draft = Draft(cube, round_num=3, booster_size=3)
+        self.draft = Draft(cube)
         [self.draft.add_drafter(Drafter(s.id, s.name)) for s in self.subscribers]
-        self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=r"card_id=(\d*)")
-        self.dispatcher.add_handler(self.drafted_card_handler)
         self.draft.start()
+        # Draft specific regex
+        pattern = r"^\[" + str(self.draft.id) + r"\]card_id=(\d*)$"
+        print(pattern)
+        self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=pattern)
+        self.dispatcher.add_handler(self.drafted_card_handler)
 
         for drafter in self.draft.drafters:
             drafter.data = {"query": None, "deckstats": None}
@@ -201,7 +206,7 @@ class DraftHandler():
         if is_new_booster or is_new_round:
             for drafter in self.draft.drafters:
                 if len(drafter.pool) > 1:
-                    drafter.data["deckstats"] = deckstat.get_sealed_url(drafter.pool, drafter)
+                    drafter.data["deckstats"] = deckstat.get_sealed_url(drafter.pool, drafter, title="Draft Pool")
                     sleep(0.5)
                 text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster=is_new_booster)
                 drafter.data["query"].edit_message_text(text=text,
@@ -209,7 +214,7 @@ class DraftHandler():
                                                         parse_mode="HTML",
                                                         disable_web_page_preview=True)
         else:
-            text, reply_markup = self.get_booster_dialogue(drafter, card, is_new_booster)
+            text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster)
             query.edit_message_text(text=text,
                                     reply_markup=reply_markup,
                                     parse_mode="HTML",

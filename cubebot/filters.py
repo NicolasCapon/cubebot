@@ -1,4 +1,5 @@
 import config
+import logging
 from telegram.ext import BaseFilter
 from enum import Enum, auto
 from model import session, Player
@@ -60,7 +61,7 @@ def restrict(user_type):
             elif user_type is UserType.PLAYER:
                 users_id = [id for id, in session.query(Player.id).all()]
             if not update.effective_user.id in users_id:
-                logging.info(f"Unauthorized access denied for {user}.")
+                logging.info(f"Unauthorized access denied for {update.effective_user}.")
                 return
             return func(self, update, context, *args, **kwargs)
         return command_func

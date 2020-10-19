@@ -1,4 +1,5 @@
 import config
+import logging
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Binary, Boolean, DateTime, create_engine
 from sqlalchemy.orm import sessionmaker, relationship, backref
@@ -228,67 +229,100 @@ class DeckList(Base):
         return f"<DeckList(deck_id={self.deck_id}, card_id={self.card_id}, "\
                f"amount={self.amount}, note={self.note})>"
 
-class Draft():
+
+class Draft(Base):
+
+    __tablename__ = "draft"
     
-    id = 1
-    turn_order = -1
-    boosters = []
-    drafters = []
-    choices = []
-    round = None
-    round_num = 0
-    round_count = 0
-    booster_size = 0
+    id = Column(Integer, primary_key=True)
+    date = Column(DateTime, default=datetime.now())
+    booster_size = Column(Integer)
+    round_num = Column(Integer)
+    state = Column(String)
+
+    cube_id = Column(Integer, ForeignKey("cube.id"))
+    cube = relationship("Cube")
 
     def __init__(self, cube, round_num=5, booster_size=9):
-        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == cube.id, Card.type_line != "Basic Land").all()
+        self.cube = cube
+        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == cube.id, Card.type_line != "Basic Land", Card.tags != "Draft").all()
         shuffle(cube_cards)
+        logging.info(f"{len(cube_cards)} cards selected.")
         # TODO: remove Booster where len is not equal to booster_size
-        self.boosters = [Booster(cube_cards[i:i+booster_size]) for i in range(0, len(cube_cards), booster_size)]
+        self.boosters = [Booster(n+1, cube_cards[i:i+booster_size]) for n, i in enumerate(range(0, len(cube_cards), booster_size)) if i+booster_size < len(cube_cards)]
+        self.booster_size = booster_size
         self.round_num = round_num
+        self.state = "INIT"
+        self.turn_order = -1
+        self.drafters = []
+        self.round = None
+        self.round_count = 0
 
+    @hybrid_method
     def add_drafter(self, drafter):
         drafter.draft = self
         self.drafters.append(drafter)
         return self.drafters
-    
+
+    @hybrid_method
     def start(self):
-        print("DRAFT START")
-        print(self)
+        logging.info("DRAFT STARTS")
+        session.add(self)
         self.round = self.get_round()
-        
+        self.state = "PLAY"
+        session.commit()
+        logging.info(self)
+
+    @hybrid_method    
     def get_round(self):
         if self.round_count < self.round_num:
-            print(">>>>>>>>>>>>>>>>> NEW ROUND >>>>>>>>>>>>>>>>>")
+            logging.info(">>>>>>>>>>>>>>>>> NEW ROUND >>>>>>>>>>>>>>>>>")
             self.turn_order = -self.turn_order
             self.round_count += 1
-            return deque([self.boosters.pop() for d in self.drafters])
+            r = []
+            for drafter in self.drafters:
+                r.append(self.boosters.pop())
+                drafter.reset_pick_count()
+            return deque(r)
         else:
+            logging.info("DRAFT ENDS")
+            self.state = "END"
+            session.commit()
             return []
-    
+
+    @hybrid_method
     def get_drafter_by_id(self, id):
         for drafter in self.drafters:
             if drafter.id == id:
                 return drafter
-        
+
+    @hybrid_method    
     def get_booster(self, drafter):
         i = self.drafters.index(drafter)
         return self.round[i] if i < len(self.round) else None
-    
+
+    @hybrid_method
     def control_choices(self):
         if all(drafter.choice for drafter in self.drafters):
             for drafter in self.drafters:
                 drafter.pick()
-            return self.rotate_boosters()
+            is_new_booster, is_new_round = self.rotate_boosters()
+            # Auto pick last card
+            for drafter in self.drafters:
+                booster = drafter.get_booster()
+                if booster and len(booster.cards) == 1:
+                    drafter.choose(booster.cards[0])
+            return is_new_booster, is_new_round
         else:
             return False, False
-    
+
+    @hybrid_method
     def rotate_boosters(self):
         is_new_booster = False
         is_new_round = False
         if any(booster.cards for booster in self.round):
             # If a booster still has cards, pass it to the next player
-            print("================== ROTATE ==================")
+            logging.info("================== ROTATE ==================")
             self.round.rotate(self.turn_order)
             is_new_booster = True
         else:
@@ -298,7 +332,8 @@ class Draft():
             is_new_round = True
         
         return (is_new_booster, is_new_round)
-    
+
+    @hybrid_method
     def add_booster(self, drafter):
         # Tips, add booster before adding choice
         i = self.drafters.index(drafter)
@@ -307,30 +342,38 @@ class Draft():
         
     def __repr__(self):
         return f"<Draft(id={self.id}, turn_order={self.turn_order})>"
-            
+
+     
 class Drafter():
         
-    id = None
-    pool = []
     draft = None
-    choice = None
-    data = None
     
-    def __init__(self, id, name):
+    def __init__(self, id, name, data= None, pool=[]):
         self.id = id
         self.name = name
+        self.choice = None
+        self.data = None
+        self.pool = []
+        self.pick_count = self.reset_pick_count()
+
+    def reset_pick_count(self):
+        self.pick_count = 1
         
     def choose(self, card):
-        self.choice = Choice(self, card)
+        self.choice = Choice(self, card, self.draft.round_count, self.pick_count)
         return self.draft.control_choices()
         
     def pick(self):
         booster = self.get_booster()
         if self.choice and booster:
-            print(self.choice)
+            logging.info(self.choice)
+            self.choice.booster_id = booster.id
+            session.add(self.choice)
+            session.commit()
             booster.cards.remove(self.choice.card)
             self.pool.append(self.choice.card)
             self.choice = None
+            self.pick_count += 1
             return True
     
     def get_booster(self):
@@ -339,28 +382,45 @@ class Drafter():
     
     def __repr__(self):
         return f"<Drafter(id={self.id}, name={self.name})>"
-        
-class Choice():
+
+
+class Choice(Base):
+
+    __tablename__ = "choice"
+
+    draft_id = Column(Integer, ForeignKey("draft.id"), primary_key=True)
+    draft = relationship("Draft")
     
-    def __init__(self, drafter, card):
+    card_id = Column(Integer, ForeignKey("card.id"))
+    card = relationship("Card")
+
+    drafter_id = Column(Integer, primary_key=True)
+    round_count = Column(Integer, primary_key=True)
+    pick_count = Column(Integer, primary_key=True)
+    booster_id = Column(Integer)
+    
+    
+    def __init__(self, drafter, card, round_count, pick_count):
         self.drafter = drafter
+        self.drafter_id = self.drafter.id
+        self.draft = drafter.draft
         self.card = card
+        self.round_count = round_count
+        self.pick_count = pick_count
         
     def __repr__(self):
-        return f"<Choice(drafter={self.drafter}, card={self.card})>"
+        return f"<Choice(drafter={self.drafter}, card={self.card}, round_count={self.round_count}, "\
+               f"pick_count={self.pick_count})>"
             
             
 class Booster():
     
-    id = 1
-    cards = []
-    
-    def __init__(self, cards, id=1):
+    def __init__(self, id, cards):
         self.id = id
         self.cards = cards
         
     def __repr__(self):
-        return f"<Booster(id={self.id})>"
+        return f"<Booster(id={self.id}, size={len(self.cards)})>"
         
     
 Base.metadata.create_all(engine)
