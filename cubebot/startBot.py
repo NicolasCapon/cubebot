@@ -88,9 +88,11 @@ def send_help(update, context):
                 "/play [mode]- start playing game mode\n"\
                 "/win - stop game\n"\
                 "/sealed - send sealed pool\n"\
+                "/draft - start draft\n"\
                 "/rematch - reload last decks\n"
 
     text += "/scan - scanner ses cartes\n"\
+            "/load_deck - charger son dernier deck\n" \
             "/mydeck - editer son deck\n" \
             "Tips:\n- Pour supprimer toutes les cartes de son deck, "\
             "taper 'REMOVE ALL CARDS' dans le menu d'édition des cartes"

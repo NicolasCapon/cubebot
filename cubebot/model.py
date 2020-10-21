@@ -124,6 +124,10 @@ class Game(Base):
                 return deck
         return None
 
+    @hybrid_property
+    def duration(self):
+        return datetime.now() - self.date
+        
     def __repr__(self):
         return f"<Game(id={self.id}, date={self.date}, "\
                f"mode={self.mode}, description={self.description}, state={self.state}, "\
@@ -197,7 +201,7 @@ class Deck(Base):
         return False
 
     def __repr__(self):
-        return f"<Deck(id={self.id}, is_winner={self.is_winner}, "\
+        return f"<Deck(id={self.id}, card_count:{self.card_count}, is_winner={self.is_winner}, "\
                f"game_id={self.game_id}, player_id={self.player_id}, "\
                f"name={self.name}, description={self.description})>"
 
@@ -243,7 +247,7 @@ class Draft(Base):
     cube_id = Column(Integer, ForeignKey("cube.id"))
     cube = relationship("Cube")
 
-    def __init__(self, cube, round_num=5, booster_size=9):
+    def __init__(self, cube, round_num=5, booster_size=9, auto_pick_last_card=True):
         self.cube = cube
         cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == cube.id, Card.type_line != "Basic Land", Card.tags != "Draft").all()
         shuffle(cube_cards)
@@ -257,6 +261,7 @@ class Draft(Base):
         self.drafters = []
         self.round = None
         self.round_count = 0
+        self.auto_pick_last_card = auto_pick_last_card
 
     @hybrid_method
     def add_drafter(self, drafter):
@@ -308,10 +313,11 @@ class Draft(Base):
                 drafter.pick()
             is_new_booster, is_new_round = self.rotate_boosters()
             # Auto pick last card
-            for drafter in self.drafters:
-                booster = drafter.get_booster()
-                if booster and len(booster.cards) == 1:
-                    drafter.choose(booster.cards[0])
+            if self.auto_pick_last_card:
+                for drafter in self.drafters:
+                    booster = drafter.get_booster()
+                    if booster and len(booster.cards) == 1:
+                        drafter.choose(booster.cards[0])
             return is_new_booster, is_new_round
         else:
             return False, False
@@ -369,6 +375,7 @@ class Drafter():
             logging.info(self.choice)
             self.choice.booster_id = booster.id
             session.add(self.choice)
+            booster.from_drafter = self
             session.commit()
             booster.cards.remove(self.choice.card)
             self.pool.append(self.choice.card)
@@ -415,12 +422,13 @@ class Choice(Base):
             
 class Booster():
     
-    def __init__(self, id, cards):
+    def __init__(self, id, cards, from_drafter=None):
         self.id = id
         self.cards = cards
+        self.from_drafter = from_drafter
         
     def __repr__(self):
-        return f"<Booster(id={self.id}, size={len(self.cards)})>"
+        return f"<Booster(id={self.id}, size={len(self.cards)}, from_drafter={self.from_drafter})>"
         
     
 Base.metadata.create_all(engine)

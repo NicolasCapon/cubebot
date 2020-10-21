@@ -304,6 +304,7 @@ def remove_games_from_cube(cube, state):
                 deck.cards[:] = []
                 logging.info(f"Remove {deck}")
                 game.decks.remove(deck)
+                session.commit()
             game.decks[:] = []
             logging.info(f"Remove {game}")
             cube.games.remove(game)
@@ -319,31 +320,41 @@ if __name__ == "__main__":
                         level=config.log_level)
 
     cube = session.query(Cube).first()
-    
+    game = session.query(Game).order_by(Game.id.desc()).first()
+    logging.info(game.duration)
+
     players = session.query(Player).all()
-    booster_size = 25
-    draft = Draft(cube, round_num=3, booster_size=booster_size)
-    print(len(draft.boosters))
-    for booster in draft.boosters:
-        if len(booster.cards) != booster_size:
-            print(booster)
-##    drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
-##    draft.start()
-##    for drafter in draft.drafters:
-##        b = draft.get_booster(drafter)
-##        print(drafter.name, " choose")
-##        drafter.choose(b.cards[0])
-##    
-##    for drafter in draft.drafters:
-##        b = draft.get_booster(drafter)
-##        print(drafter.name, " choose")
-##        drafter.choose(b.cards[0])
-##        
-##    for drafter in draft.drafters:
-##        b = draft.get_booster(drafter)
-##        print(drafter.name, " choose")
-##        drafter.choose(b.cards[0])
-##    
+    booster_size = 2
+    draft = Draft(cube, round_num=3, booster_size=booster_size, auto_pick_last_card=False)
+    drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
+    draft.start()
+    for drafter in draft.drafters:
+        b = draft.get_booster(drafter)
+        i = draft.drafters.index(drafter)
+        print("Booster is from: ", b.from_drafter)
+        print(drafter.name, " choose")
+        for card in b.cards:
+            print(card.name)
+        drafter.choose(b.cards[0])
+    
+    for drafter in draft.drafters:
+        b = draft.get_booster(drafter)
+        i = draft.drafters.index(drafter)
+        print("Booster is from: ", b.from_drafter)
+        print(drafter.name, " choose")
+        for card in b.cards:
+            print(card.name)
+        drafter.choose(b.cards[0])
+        
+    for drafter in draft.drafters:
+        b = draft.get_booster(drafter)
+        i = draft.drafters.index(drafter)
+        print("Booster is from: ", b.from_drafter)
+        print(drafter.name, " choose")
+        for card in b.cards:
+            print(card.name)
+        drafter.choose(b.cards[0])
+    
 ##    for drafter in draft.drafters:
 ##        print(drafter.name)
 ##        for card in drafter.pool:

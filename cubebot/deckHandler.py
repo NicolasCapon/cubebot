@@ -34,10 +34,46 @@ class DeckHandler:
         self.scan_handler = CommandHandler("scan", self.new_deck)
         dispatcher.add_handler(self.scan_handler)
         self.scan_buttons_handler = CallbackQueryHandler(self.scan_buttons, pattern=r"scan_button=(\d)")
+        # Load last deck handler
+        self.last_deck_handler = CommandHandler("load_deck", self.load_last_deck)
+        dispatcher.add_handler(self.last_deck_handler)
         # Conversation Handler for deck title and description
         self.deck_conv_handler = self.deck_conv_handler()
         dispatcher.add_handler(self.deck_conv_handler)
-    
+
+    def remove_handlers(self, dispatcher):
+        dispatcher.remove_handler(self.scan_handler)
+        dispatcher.remove_handler(self.last_deck_handler)
+        dispatcher.remove_handler(self.deck_conv_handler)
+        
+    @restrict(UserType.PLAYER)
+    def load_last_deck(self, update, context):
+        player_id = update.message.from_user.id
+        last_deck = session.query(Deck).filter(Deck.player_id == player_id, Deck.game_id != self.game.id).order_by(Deck.id.desc()).first()
+        if not last_deck:
+            text = "Je n'ai pas trouvé d'ancien deck à toi."
+            context.bot.send_message(chat_id=player_id,
+                                     text=text)
+            return False
+
+        last_deck = Deck(player=last_deck.player, name=last_deck.name, game=self.game, description=last_deck.description, cards=last_deck.cards)
+
+        current_deck = self.game.get_deck_from_player_id(player_id)
+        if current_deck:
+            self.game.decks.remove(current_deck)
+
+        session.add(last_deck)    
+        self.game.decks.append(last_deck)
+        session.commit()
+        context.user_data['deck'] = last_deck
+        context.user_data['deck'].deckstats = deckstat.get_deck_url(last_deck)
+        
+        logging.info(f"{last_deck.player.name} reloads deck: {last_deck}")
+
+        text = "J'ai bien chargé le deck de ta dernière partie. Pour le consulter: /mydeck"
+        context.bot.send_message(chat_id=player_id,
+                                 text=text)
+        
     def get_scan_keyboard(self, count=0):
         if count:
             keyboard = [[InlineKeyboardButton("Corriger", callback_data='scan_button=1'),
@@ -402,9 +438,9 @@ class DeckHandler:
                                           voice=open(path, 'rb'),
                                           caption=c.card.name)
             text = f"{avert if c.signature  else ''}{c.card.name} - Est-ce bien ta carte ?"
-            keyboard = [[InlineKeyboardButton("Annuler", callback_data='0'),
-                         InlineKeyboardButton("Retenter", callback_data='2')],
-                        [InlineKeyboardButton("Oui", callback_data='1')]]
+            keyboard = [[InlineKeyboardButton("Annuler", callback_data='confirm_card=0'),
+                         InlineKeyboardButton("Retenter", callback_data='confirm_card=2')],
+                        [InlineKeyboardButton("Oui", callback_data='confirm_card=1')]]
             markup = InlineKeyboardMarkup(keyboard)
             context.user_data["sign_card_id"] = c.card.id
             update.message.reply_text(text=text,

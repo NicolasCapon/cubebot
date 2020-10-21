@@ -20,7 +20,6 @@ class DraftHandler():
         self.drafted_card_handler = None
         self.draft_handler = self.get_select_player_convHandler("draft", self.start_draft)
         dispatcher.add_handler(self.draft_handler)
-        """TODO: mutualiser le select player handler"""
         # Sealed
         self.sealed_handler = self.get_select_player_convHandler("sealed", self.start_sealed)
         dispatcher.add_handler(self.sealed_handler)
@@ -123,7 +122,12 @@ class DraftHandler():
         update.callback_query.edit_message_text(text=final_text)
 
     def get_booster_dialogue(self, drafter, is_new_booster=True, row_length=3):
-        text = f"<u>Ronde {self.draft.round_count}/{self.draft.round_num}</u>"
+        text = f"Un booster tout frais est disponible !\n\n"
+        booster = drafter.get_booster()
+        if booster and booster.from_drafter:
+            text = f"<a href='tg://user?id={booster.from_drafter.id}'>{booster.from_drafter.name}</a> vient de te passer son booster !\n\n"
+        
+        text += f"<u>Ronde {self.draft.round_count}/{self.draft.round_num}</u>"
         if drafter.pool:
             text += f"\nMon dernier pick: <a href='https://scryfall.com/card/{drafter.pool[-1].scryfall_id}'>{drafter.pool[-1].name}</a>"
         
@@ -137,7 +141,6 @@ class DraftHandler():
         else:
             text += "\nChoix pris en compte. En attente des autres joueurs...\n"
         
-        booster = drafter.get_booster()
         if not booster:
             session.commit()
             text = f"Draft terminé. Voici ton <a href='{url}'>pool</a>"
@@ -179,7 +182,7 @@ class DraftHandler():
         self.draft.start()
         # Draft specific regex
         pattern = r"^\[" + str(self.draft.id) + r"\]card_id=(\d*)$"
-        print(pattern)
+        logging.info("Callback pattern: ", pattern)
         self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=pattern)
         self.dispatcher.add_handler(self.drafted_card_handler)
 
@@ -190,15 +193,17 @@ class DraftHandler():
                                      text=text,
                                      reply_markup=reply_markup,
                                      parse_mode="HTML",
-                                     disable_web_page_preview=True)
-    
-    
+                                     disable_web_page_preview=True,
+                                     disable_notification=False)
+        
     def choose_card(self, update, context):
         query = update.callback_query
         drafter = self.draft.get_drafter_by_id(query.from_user.id)
         reg = re.compile(r"card_id=(\d*)")
         match = int(reg.findall(query.data)[0])
         card = session.query(Card).filter(Card.id == match).first()
+        pick_count = drafter.pick_count
+        round_count = self.draft.round_count
         is_new_booster, is_new_round = drafter.choose(card)
         drafter.data["query"] = query
         
@@ -208,11 +213,20 @@ class DraftHandler():
                 if len(drafter.pool) > 1:
                     drafter.data["deckstats"] = deckstat.get_sealed_url(drafter.pool, drafter, title="Draft Pool")
                     sleep(0.5)
-                text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster=is_new_booster)
+                previous_pick = drafter.pool[-1]
+                text = f"<a href='https://scryfall.com/card/{previous_pick.scryfall_id}'>"\
+                       f"Ronde {round_count} Pick {pick_count}</a>"
                 drafter.data["query"].edit_message_text(text=text,
-                                                        reply_markup=reply_markup,
                                                         parse_mode="HTML",
-                                                        disable_web_page_preview=True)
+                                                        disable_web_page_preview=False)
+                sleep(0.1)
+                text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster=is_new_booster)
+                context.bot.send_message(chat_id=drafter.id,
+                                         text=text,
+                                         reply_markup=reply_markup,
+                                         parse_mode="HTML",
+                                         disable_web_page_preview=True,
+                                         disable_notification=False)
         else:
             text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster)
             query.edit_message_text(text=text,

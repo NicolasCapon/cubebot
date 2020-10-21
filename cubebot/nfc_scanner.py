@@ -19,7 +19,11 @@ class NFC_Scanner():
         self.is_on = True
         logging.info("NFC_Scanner turned ON")
         while self.is_on:
-            uid = self.pn532.read_passive_target(timeout=self.timeout)
+            uid = None
+            try:
+                uid = self.pn532.read_passive_target(timeout=self.timeout)
+            except RuntimeError as e:
+                logging.exception(e)
             if uid is None:
                 continue
             behaviour(uid, *args, **kwargs)
