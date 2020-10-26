@@ -18,6 +18,7 @@ class DraftHandler():
         # Draft
         self.draft = None
         self.drafted_card_handler = None
+        self.draft_pool_handler = None
         self.draft_handler = self.get_select_player_convHandler("draft", self.start_draft)
         dispatcher.add_handler(self.draft_handler)
         # Sealed
@@ -102,6 +103,7 @@ class DraftHandler():
         # Send sealed
         cards = session.query(Card).join(CubeList).join(Cube).filter(Cube.id == 1, Card.type_line != "Basic Land").all()
         shuffle(cards)
+        shuffle(self.subscribers)
         sealed_size = 90
         start = 0
         final_text = "Les scellés ont bien été envoyés à :\n"
@@ -112,7 +114,7 @@ class DraftHandler():
             logging.info(f"{player.name} Sealed Pool [{url}]")
             text = f"{player.name} voici <a href='{url}'>ton scellé</a>.\nPense à créer ton deck avec et à le sauvegarder avant la prochaine partie.\n"
             text += "<i>Pour modifier ton deck utilise l'éditeur deckstat puis enregistre le sur ton compte "\
-                    "ou si tu n'as pas de compte fait les modifs sur deckstat puis clique sur export et copie colle ta decklist terminée dans le chat.</i>"
+                    "ou si tu n'as pas de compte fait les modifs sur deckstat puis cliques sur export et copie colle ta decklist terminée dans le chat.</i>"
             context.bot.send_message(chat_id=player.id,
                                      text=text,
                                      parse_mode="HTML")
@@ -131,10 +133,8 @@ class DraftHandler():
         if drafter.pool:
             text += f"\nMon dernier pick: <a href='https://scryfall.com/card/{drafter.pool[-1].scryfall_id}'>{drafter.pool[-1].name}</a>"
         
-        url = drafter.data["deckstats"]
-        if url:
-            emoji_chart = "\U0001F4CA"
-            text += f"\nVoir mon pool: <a href='{url}'>{emoji_chart}</a>"
+        if len(drafter.pool) > 1:
+            text += f"\nVoir mon pool: /pool"
         
         if is_new_booster or not drafter.choice:
             text += "\nSelectionne une carte :\n"
@@ -143,11 +143,15 @@ class DraftHandler():
         
         if not booster:
             session.commit()
+            url = deckstat.get_sealed_url(drafter.pool, drafter, title="Draft Pool")
             text = f"Draft terminé. Voici ton <a href='{url}'>pool</a>"
             # TODO : function to clean draft data and handlers
-            self.dispatcher.remove_handler(self.drafted_card_handler)
-            # Add entry point
-            self.dispatcher.add_handler(self.draft_handler)
+            if self.drafted_card_handler:
+                self.dispatcher.remove_handler(self.draft_pool_handler)
+                self.dispatcher.remove_handler(self.drafted_card_handler)
+                self.drafted_card_handler = None
+                # Add entry point
+                self.dispatcher.add_handler(self.draft_handler)
             return text, None
         
         cards = booster.cards
@@ -185,9 +189,11 @@ class DraftHandler():
         logging.info("Callback pattern: ", pattern)
         self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=pattern)
         self.dispatcher.add_handler(self.drafted_card_handler)
+        self.draft_pool_handler = CommandHandler("/pool", self.get_drafter_pool)
+        self.dispatcher.add_handler(self.draft_pool_handler)
 
         for drafter in self.draft.drafters:
-            drafter.data = {"query": None, "deckstats": None}
+            drafter.data = {"query": None}
             text, reply_markup = self.get_booster_dialogue(drafter)
             context.bot.send_message(chat_id=drafter.id,
                                      text=text,
@@ -210,9 +216,6 @@ class DraftHandler():
         # If new booster or new round, we update reply markup for all drafters
         if is_new_booster or is_new_round:
             for drafter in self.draft.drafters:
-                if len(drafter.pool) > 1:
-                    drafter.data["deckstats"] = deckstat.get_sealed_url(drafter.pool, drafter, title="Draft Pool")
-                    sleep(0.5)
                 previous_pick = drafter.pool[-1]
                 text = f"<a href='https://scryfall.com/card/{previous_pick.scryfall_id}'>"\
                        f"Ronde {round_count} Pick {pick_count}</a>"
@@ -233,3 +236,13 @@ class DraftHandler():
                                     reply_markup=reply_markup,
                                     parse_mode="HTML",
                                     disable_web_page_preview=True)
+    
+    def get_drafter_pool(self, update, context):
+        text = "Il te faut au moins avoir drafté 2 cartes pour voir ton pool."
+        drafter = self.draft.get_drafter_by_id(update.message.from_user.id)
+        if len(drafter.pool) > 1:
+            url = deckstat.get_sealed_url(drafter.pool, drafter, title="Draft Pool")
+            text = "Voici <a href='{url}'>ton pool</a>."
+        
+        update.message.reply_text(text=text,
+                                  parse_mode="HTML")

@@ -88,11 +88,15 @@ def get_card_by_id(scryfall_id):
     content = get_content(url)
     return content
 
-def get_card_by_name(name):
+def get_card_by_name(name, set="", exact=True):
     """Return a card object from a string cardname"""
-    if not name: return None
-    valid_query = quote(name)
-    url = "https://api.scryfall.com/cards/named?fuzzy={}".format(valid_query)
+    if set:
+        set = "&set=" + quote_plus(set)
+    if exact:
+        exact = "exact"
+    else:
+        exact = "fuzzy"
+    url = f"https://api.scryfall.com/cards/named?{exact}={quote(name)}{set}"
     content = get_content(url)
     if not content.get("object", "error") == "error": 
         return content

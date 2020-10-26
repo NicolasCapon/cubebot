@@ -51,12 +51,11 @@ def import_cubecobra(cube):
 def add_scryfall_infos(card):
     """Add scryfall id, image_url
        Then create related token and link them to card"""
-    s = scryfall.search(name=card.name, set=card.set_code)
-    data = s.get("data", [None])[0]
-    if data.get("object", None) == "card":
-        card.scryfall_id = data["id"]
-        card.image_url = scryfall.get_image_urls(data)[0]
-        tokens_id = scryfall.get_related_tokens_id(data)
+    s = scryfall.get_card_by_name(card.name, set=card.set_code, exact=True)
+    if s.get("object", None) == "card":
+        card.scryfall_id = s["id"]
+        card.image_url = scryfall.get_image_urls(s)[0]
+        tokens_id = scryfall.get_related_tokens_id(s)
         for token_id in tokens_id:
             t = scryfall.get_card_by_id(token_id)
             color = scryfall.get_card_color(t)
@@ -318,42 +317,44 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                        # filename=config.log_file,
                         level=config.log_level)
+            
 
-    cube = session.query(Cube).first()
-    game = session.query(Game).order_by(Game.id.desc()).first()
-    logging.info(game.duration)
-
-    players = session.query(Player).all()
-    booster_size = 2
-    draft = Draft(cube, round_num=3, booster_size=booster_size, auto_pick_last_card=False)
-    drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
-    draft.start()
-    for drafter in draft.drafters:
-        b = draft.get_booster(drafter)
-        i = draft.drafters.index(drafter)
-        print("Booster is from: ", b.from_drafter)
-        print(drafter.name, " choose")
-        for card in b.cards:
-            print(card.name)
-        drafter.choose(b.cards[0])
     
-    for drafter in draft.drafters:
-        b = draft.get_booster(drafter)
-        i = draft.drafters.index(drafter)
-        print("Booster is from: ", b.from_drafter)
-        print(drafter.name, " choose")
-        for card in b.cards:
-            print(card.name)
-        drafter.choose(b.cards[0])
+    # cube = session.query(Cube).first()
+    # game = session.query(Game).order_by(Game.id.desc()).first()
+    # logging.info(game.duration)
+
+    # players = session.query(Player).all()
+    # booster_size = 2
+    # draft = Draft(cube, round_num=3, booster_size=booster_size, auto_pick_last_card=False)
+    # drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
+    # draft.start()
+    # for drafter in draft.drafters:
+        # b = draft.get_booster(drafter)
+        # i = draft.drafters.index(drafter)
+        # print("Booster is from: ", b.from_drafter)
+        # print(drafter.name, " choose")
+        # for card in b.cards:
+            # print(card.name)
+        # drafter.choose(b.cards[0])
+    
+    # for drafter in draft.drafters:
+        # b = draft.get_booster(drafter)
+        # i = draft.drafters.index(drafter)
+        # print("Booster is from: ", b.from_drafter)
+        # print(drafter.name, " choose")
+        # for card in b.cards:
+            # print(card.name)
+        # drafter.choose(b.cards[0])
         
-    for drafter in draft.drafters:
-        b = draft.get_booster(drafter)
-        i = draft.drafters.index(drafter)
-        print("Booster is from: ", b.from_drafter)
-        print(drafter.name, " choose")
-        for card in b.cards:
-            print(card.name)
-        drafter.choose(b.cards[0])
+    # for drafter in draft.drafters:
+        # b = draft.get_booster(drafter)
+        # i = draft.drafters.index(drafter)
+        # print("Booster is from: ", b.from_drafter)
+        # print(drafter.name, " choose")
+        # for card in b.cards:
+            # print(card.name)
+        # drafter.choose(b.cards[0])
     
 ##    for drafter in draft.drafters:
 ##        print(drafter.name)
