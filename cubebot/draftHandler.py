@@ -110,7 +110,7 @@ class DraftHandler():
         for player in self.subscribers:
             pool = cards[start:start+sealed_size]
             start += sealed_size
-            url = deckstat.get_sealed_url(pool, player)
+            url = deckstat.get_sealed_url(pool, title=f"Scellé de {player.name}")
             logging.info(f"{player.name} Sealed Pool [{url}]")
             text = f"{player.name} voici <a href='{url}'>ton scellé</a>.\nPense à créer ton deck avec et à le sauvegarder avant la prochaine partie.\n"
             text += "<i>Pour modifier ton deck utilise l'éditeur deckstat puis enregistre le sur ton compte "\
@@ -143,7 +143,7 @@ class DraftHandler():
         
         if not booster:
             session.commit()
-            url = deckstat.get_sealed_url(drafter.pool, drafter, title="Draft Pool")
+            url = deckstat.get_sealed_url(drafter.pool, title=f"Draft de {drafter.name}")
             text = f"Draft terminé. Voici ton <a href='{url}'>pool</a>"
             # TODO : function to clean draft data and handlers
             if self.drafted_card_handler:
@@ -186,10 +186,10 @@ class DraftHandler():
         self.draft.start()
         # Draft specific regex
         pattern = r"^\[" + str(self.draft.id) + r"\]card_id=(\d*)$"
-        logging.info("Callback pattern: ", pattern)
+        logging.info(f"Callback pattern: {pattern}")
         self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=pattern)
         self.dispatcher.add_handler(self.drafted_card_handler)
-        self.draft_pool_handler = CommandHandler("/pool", self.get_drafter_pool)
+        self.draft_pool_handler = CommandHandler("pool", self.get_drafter_pool)
         self.dispatcher.add_handler(self.draft_pool_handler)
 
         for drafter in self.draft.drafters:
@@ -213,16 +213,22 @@ class DraftHandler():
         is_new_booster, is_new_round = drafter.choose(card)
         drafter.data["query"] = query
         
-        # If new booster or new round, we update reply markup for all drafters
+        # If new booster or new round, we edit previous query message then send new reply markup for all drafters
         if is_new_booster or is_new_round:
             for drafter in self.draft.drafters:
-                previous_pick = drafter.pool[-1]
-                text = f"<a href='https://scryfall.com/card/{previous_pick.scryfall_id}'>"\
-                       f"Ronde {round_count} Pick {pick_count}</a>"
-                drafter.data["query"].edit_message_text(text=text,
-                                                        parse_mode="HTML",
-                                                        disable_web_page_preview=False)
-                sleep(0.1)
+                # If auto pick is activated, send the auto pick to drafter
+                if is_new_round and self.draft.auto_pick_last_card:
+                    self.send_card(drafter.pool[-2],
+                                   msg_data=drafter.data["query"],
+                                   title=f"Ronde {round_count} Pick {pick_count}")
+                    self.send_card(drafter.pool[-1],
+                                   msg_data=drafter.id,
+                                   title=f"Ronde {round_count} Pick {pick_count+1}",
+                                   context=context)
+                else:
+                    self.send_card(drafter.pool[-1],
+                                   msg_data=drafter.data["query"],
+                                   title=f"Ronde {round_count} Pick {pick_count}")
                 text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster=is_new_booster)
                 context.bot.send_message(chat_id=drafter.id,
                                          text=text,
@@ -230,6 +236,7 @@ class DraftHandler():
                                          parse_mode="HTML",
                                          disable_web_page_preview=True,
                                          disable_notification=False)
+        # If a choice is made but not all users made one, we show choosed card
         else:
             text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster)
             query.edit_message_text(text=text,
@@ -241,8 +248,23 @@ class DraftHandler():
         text = "Il te faut au moins avoir drafté 2 cartes pour voir ton pool."
         drafter = self.draft.get_drafter_by_id(update.message.from_user.id)
         if len(drafter.pool) > 1:
-            url = deckstat.get_sealed_url(drafter.pool, drafter, title="Draft Pool")
-            text = "Voici <a href='{url}'>ton pool</a>."
+            url = deckstat.get_sealed_url(drafter.pool, title=f"Draft de {drafter.name}")
+            text = f"Voici <a href='{url}'>ton pool</a>."
         
         update.message.reply_text(text=text,
                                   parse_mode="HTML")
+
+    @staticmethod
+    def send_card(card, msg_data, title, context=None):
+        text = f"<a href='https://scryfall.com/card/{card.scryfall_id}'>{title}</a>"
+        if context:
+            context.bot.send_message(chat_id=msg_data,
+                                     text=text,
+                                     parse_mode="HTML",
+                                     disable_web_page_preview=False)
+        else:
+            msg_data.edit_message_text(text=text,
+                                    parse_mode="HTML",
+                                    disable_web_page_preview=False)
+
+        sleep(0.1)

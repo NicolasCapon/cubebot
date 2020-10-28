@@ -247,7 +247,7 @@ class Draft(Base):
     cube_id = Column(Integer, ForeignKey("cube.id"))
     cube = relationship("Cube")
 
-    def __init__(self, cube, round_num=5, booster_size=9, auto_pick_last_card=True):
+    def __init__(self, cube, round_num=2, booster_size=3, auto_pick_last_card=True):
         self.cube = cube
         cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == cube.id, Card.type_line != "Basic Land", Card.tags != "Draft").all()
         shuffle(cube_cards)
@@ -317,7 +317,7 @@ class Draft(Base):
                 for drafter in self.drafters:
                     booster = drafter.get_booster()
                     if booster and len(booster.cards) == 1:
-                        drafter.choose(booster.cards[0])
+                        is_new_booster, is_new_round = drafter.choose(booster.cards[0])
             return is_new_booster, is_new_round
         else:
             return False, False
@@ -337,7 +337,7 @@ class Draft(Base):
             is_new_booster = True
             is_new_round = True
         
-        return (is_new_booster, is_new_round)
+        return is_new_booster, is_new_round
 
     @hybrid_method
     def add_booster(self, drafter):

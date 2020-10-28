@@ -1,4 +1,5 @@
 import re
+import json
 import requests
 import logging
 import datetime
@@ -17,20 +18,20 @@ def get_deck_url(deck):
         decklist += f"{deck_card.amount}x {deck_card.card.name}{note+deck_card.note if deck_card.note else ''}{br if i<len(deck.cards)-1 else ''}"
     return get_url(decklist, deck.name)
 
-def get_sealed_url(cards, player, title="Sealed Pool"):
+def get_sealed_url(cards, title):
     decklist = ""
     for i, card in enumerate(cards):
         br = "\n"
         decklist += f"1x [{card.set_code}] {card.name}{br if i<len(cards)-1 else ''}"
     
     timestamp = datetime.date.today().strftime("%d-%m-%Y")
-    decktitle = f"{player.name} {title} {timestamp}"
+    decktitle = f"{title} du {timestamp}"
     return get_url(decklist, decktitle)
 
 def get_url(decklist, decktitle):
     url = 'https://deckstats.net/index.php'
     headers = {"Content-type":"application/x-www-form-urlencoded"}
-    data = {"deck": decklist, "decktitle":decktitle}
+    data = {"deck": decklist, "decktitle":decktitle.encode('latin-1')}
     # Request and handle error status
     r = requests.post(url, data=data, headers=headers)
     if r.ok:
@@ -40,7 +41,7 @@ def get_url(decklist, decktitle):
         if m:
             return m[0]
         else:
-            logging.info(f"Match not found in page content for deck [{deck}]")
+            logging.info(f"Match not found in page content for deck [{decktitle}]")
             return None
     else:
         logging.info("Deckstat request failed {0}.".format(r))
