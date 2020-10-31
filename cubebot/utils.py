@@ -317,8 +317,9 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                        # filename=config.log_file,
                         level=config.log_level)
-            
-
+    from deckstat_interface import load_deck
+    a = load_deck("https://deckstats.net/decks/52569/1790104-nicolas-draft-pool-20-10-2020?share_key=WxUszcpt8HTjr6OR")
+    print(a["title"])
     
     # cube = session.query(Cube).first()
     # game = session.query(Game).order_by(Game.id.desc()).first()

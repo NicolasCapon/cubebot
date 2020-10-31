@@ -34,6 +34,9 @@ class DeckHandler:
         self.scan_handler = CommandHandler("scan", self.new_deck)
         dispatcher.add_handler(self.scan_handler)
         self.scan_buttons_handler = CallbackQueryHandler(self.scan_buttons, pattern=r"scan_button=(\d)")
+        # Load deckstats deck handler
+        self.load_deckstats_handler = CommandHandler("load_deckstats", self.load_deckstats)
+        dispatcher.add_handler(self.load_deckstats_handler)
         # Load last deck handler
         self.last_deck_handler = CommandHandler("load_deck", self.load_last_deck)
         dispatcher.add_handler(self.last_deck_handler)
@@ -44,8 +47,45 @@ class DeckHandler:
     def remove_handlers(self, dispatcher):
         dispatcher.remove_handler(self.scan_handler)
         dispatcher.remove_handler(self.last_deck_handler)
+        dispatcher.remove_handler(self.load_deckstats_handler)
         dispatcher.remove_handler(self.deck_conv_handler)
-        
+
+    def load_deckstats(self, update, context):
+        player = session.query(Player).filter(Player.id==update.message.from_user.id).first()
+        if context.args:
+            url = context.args[0]
+            # Add a specific game type instead of default Free for All
+            logging.info(f"{player.name} loads deck from url: {url}")
+            deck = self.game.get_deck_from_player_id(player.id)
+            if not deck:
+                deck = Deck(player=player, game=self.game)
+                errors = deck.load_deckstats_data(url)
+                session.add(deck)
+                self.game.decks.append(deck)
+                context.user_data['deck'] = deck
+            else:
+                errors= deck.load_deckstats_data(url)
+            session.commit()
+            context.user_data['deck'].deckstats = url
+
+            text = "J'ai bien chargé ton deck."
+            if errors:
+                text += "\nCependant je n'ai pas réussi à charger les cartes suivantes:"
+                for error in errors:
+                    text += f"\n- {error}"
+                text += "\nPense à les ajouter manuellement via le bouton '<i>cartes</i>' dans /mydeck"
+            else:
+                text +=  " Pour l'éditer: /mydeck"
+
+        else:
+            text = "N'oublie pas de m'envoyer l'url de ton deck comme dans l'exemple suivant:\n"\
+                    "[/load_deckstats https://mydeckurl.com]"
+
+        context.bot.send_message(chat_id=player.id,
+                                 text=text,
+                                 disable_web_page_preview=True,
+                                 parse_mode="HTML")
+
     @restrict(UserType.PLAYER)
     def load_last_deck(self, update, context):
         player_id = update.message.from_user.id

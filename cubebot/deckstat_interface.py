@@ -4,6 +4,28 @@ import requests
 import logging
 import datetime
 
+def load_deck(url):
+    """Load deck from target deckstat url"""
+    p = re.compile(r"deckstats\.net/decks/")
+    m = p.search(url)
+    if not m: return False
+    r = requests.get(url)
+    if r.ok:
+        data = r.content.decode('utf-8')
+        p = re.compile(r"init_deck_data\((.*)\)")
+        m = p.search(data)
+        if not m: return False
+        content = json.loads(m.group(1))
+        cards = content.get("sections",[{}])[0].get("cards",[])
+        title = content.get("name", None)
+        p = re.compile(r'<div class="deck_text_editable_display_content deck_text_display_markdown">\n'\
+                        '<p>(.*)<\/p>')
+        m = p.search(data)
+        description = None
+        if m: description = m.group(1)
+        return {"cards":cards, "title":title, "description":description}
+
+
 def get_deck_url(deck):
     """Get deck url on deckstat.net from given deck.
     Code inspired from cockatrice:

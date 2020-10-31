@@ -1,6 +1,7 @@
 import config
 import logging
 from datetime import datetime
+from deckstat_interface import load_deck
 from sqlalchemy import Column, Integer, String, Binary, Boolean, DateTime, create_engine
 from sqlalchemy.orm import sessionmaker, relationship, backref
 from sqlalchemy.ext.associationproxy import association_proxy
@@ -199,6 +200,22 @@ class Deck(Base):
                     deck_card.amount -= amount
                 return True
         return False
+
+    @hybrid_method
+    def load_deckstats_data(self, url):
+        deckstats_deck = load_deck(url)
+        if not deckstats_deck: return False
+        errors = []
+        for card in deckstats_deck["cards"]:
+            db_card = session.query(Card).join(CubeList).filter(Card.name == card.get("name", ""),
+                                                                CubeList.cube_id == self.game.cube_id).first()
+            if db_card:
+                self.add_card(db_card, amount=card.get("amount",1), note=card.get("comment",None))
+            else:
+                errors.append(card.get("name", ""))
+        self.name = deckstats_deck["title"]
+        self.description = deckstats_deck["description"]
+        return errors
 
     def __repr__(self):
         return f"<Deck(id={self.id}, card_count:{self.card_count}, is_winner={self.is_winner}, "\
