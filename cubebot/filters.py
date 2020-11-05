@@ -20,6 +20,7 @@ class SignConv(Enum):
     SENDING = auto()
     
 class SealedConv(Enum):
+    CUBE = auto()
     CHOOSING = auto()
     SENDING = auto()
 

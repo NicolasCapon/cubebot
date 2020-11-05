@@ -3,10 +3,12 @@ import logging
 import os
 import scryfall
 import ndef
+from random import shuffle
 from tqdm import tqdm
 from model import *
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
+from sqlalchemy import not_
 import csv
 import requests
 import feedparser
@@ -14,6 +16,7 @@ from time import mktime, sleep
 from datetime import datetime
 from bs4 import BeautifulSoup
 from pn532 import PN532_SPI
+from deckstat_interface import get_sealed_url
 
 def create_cube():
     c = Cube(name="Multiplayer Yolo Cube",
@@ -30,11 +33,13 @@ def create_cube():
     logging.info("commit")
     return c
     
-def import_cubecobra(cube):
+def import_cubecobra(cube, include_maybeboard=False):
     cards = get_cube_list(cube, from_file=False) #True if test on update
     cards = tqdm(cards, total=len(cards))
     cards.set_description(f"Cube creation")
     for card in cards:
+        if card["Maybeboard"] == "true" and not include_maybeboard:
+            continue
         c = Card(name=card["Name"],
                  set_code=card["Set"],
                  cmc=card["CMC"],
@@ -54,6 +59,7 @@ def add_scryfall_infos(card):
     s = scryfall.get_card_by_name(card.name, set=card.set_code, exact=True)
     if s.get("object", None) == "card":
         card.scryfall_id = s["id"]
+        card.name = s["name"]
         card.image_url = scryfall.get_image_urls(s)[0]
         tokens_id = scryfall.get_related_tokens_id(s)
         for token_id in tokens_id:
@@ -308,7 +314,80 @@ def remove_games_from_cube(cube, state):
             logging.info(f"Remove {game}")
             cube.games.remove(game)
     session.commit()
-    
+
+def set_boosters(draft):
+    boosters = []
+    if draft.cube.id == 1:
+        draft.booster_size = 9
+        draft.round_num = 5
+        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == draft.cube.id,
+                                                               Card.type_line != "Basic Land",
+                                                               Card.tags != "Draft").all()
+        shuffle(cube_cards)
+        logging.info(f"{len(cube_cards)} cards selected.")
+        n = 0
+        for drafter in draft.drafters:
+            for i in range(draft.round_num):
+                booster_cards = []
+                # 12 cards per boost
+                while len(booster_cards) < draft.booster_size:
+                    booster_cards.append(cube_cards.pop())
+                boosters.append(Booster(id=n, cards=booster_cards))
+                n += 1
+
+    elif draft.cube.id == 2:
+        # Custom function for Greg Cube Draft
+        commanders = session.query(Card).join(CubeList).filter(CubeList.cube_id == 3,
+                                                               Card.type_line != "Basic Land",
+                                                               not_(Card.tags.contains('partnerWith'))).all()
+        # Manually add partners
+        for partner in draft.partners:
+            commanders.append(session.query(Card).join(CubeList).filter(CubeList.cube_id == 3,
+                                                                        Card.name == partner["name"]).first())
+
+        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == 2,
+                                                               Card.type_line != "Basic Land").all()
+
+        shuffle(cube_cards)
+        shuffle(commanders)
+
+        n = 0
+        for drafter in draft.drafters:
+            # 5 main boosters
+            for i in range(5):
+                booster_cards = []
+                # 12 cards per boost
+                while len(booster_cards) < 12:#12
+                    booster_cards.append(cube_cards.pop())
+                boosters.append(Booster(id=n, cards=booster_cards))
+                n += 1
+
+
+        command_tower = session.query(Card).filter(Card.name == "Command Tower").first()
+        # Add commander last to be poped first during draft
+        for drafter in draft.drafters:
+            # Every player get the card 'command tower' to build his deck
+            drafter.pool.append(command_tower)
+            booster_cards = []
+            # 6 cards per boost
+            while len(booster_cards) < 6:
+                booster_cards.append(commanders.pop())
+            boosters.append(Booster(id=n, cards=booster_cards))
+            n += 1
+
+    else:
+        logging.info("No specific configuration for this cube")
+        return None, None
+
+    draft.boosters = boosters
+
+    content = ""
+    for card in cube_cards:
+        content += card.name + "\n"
+        filename = "Cartes restantes.txt"
+
+    return content, filename
+
 if __name__ == "__main__":
     """To test update :
     - create cube with last_update = 2020-04-01 13:58:21
@@ -317,109 +396,61 @@ if __name__ == "__main__":
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                        # filename=config.log_file,
                         level=config.log_level)
-    from deckstat_interface import load_deck
-    a = load_deck("https://deckstats.net/decks/52569/1790104-nicolas-draft-pool-20-10-2020?share_key=WxUszcpt8HTjr6OR")
-    print(a["title"])
-    
-    # cube = session.query(Cube).first()
-    # game = session.query(Game).order_by(Game.id.desc()).first()
-    # logging.info(game.duration)
 
-    # players = session.query(Player).all()
-    # booster_size = 2
-    # draft = Draft(cube, round_num=3, booster_size=booster_size, auto_pick_last_card=False)
-    # drafters = [draft.add_drafter(Drafter(p.id, p.name)) for p in players]
-    # draft.start()
-    # for drafter in draft.drafters:
-        # b = draft.get_booster(drafter)
-        # i = draft.drafters.index(drafter)
-        # print("Booster is from: ", b.from_drafter)
-        # print(drafter.name, " choose")
-        # for card in b.cards:
-            # print(card.name)
-        # drafter.choose(b.cards[0])
-    
-    # for drafter in draft.drafters:
-        # b = draft.get_booster(drafter)
-        # i = draft.drafters.index(drafter)
-        # print("Booster is from: ", b.from_drafter)
-        # print(drafter.name, " choose")
-        # for card in b.cards:
-            # print(card.name)
-        # drafter.choose(b.cards[0])
-        
-    # for drafter in draft.drafters:
-        # b = draft.get_booster(drafter)
-        # i = draft.drafters.index(drafter)
-        # print("Booster is from: ", b.from_drafter)
-        # print(drafter.name, " choose")
-        # for card in b.cards:
-            # print(card.name)
-        # drafter.choose(b.cards[0])
-    
-##    for drafter in draft.drafters:
-##        print(drafter.name)
-##        for card in drafter.pool:
-##            print(card.name)
-##    
-##    for drafter in drafters:
-##        player_booster = draft.get_booster(drafter)
-##        player_choice = drafter.choose(player_booster.cards[0])
-##        draft.add_choice(player_choice)
-##        print(drafter.pool)
-##    
-##    player_booster = draft.get_booster(drafters[0])
-##    player_choice = drafters[0].choose(player_booster.cards[0])
-##    draft.add_choice(player_choice)
-##    print(drafters[0].pool)
-
-
-    # d = session.query(Deck).first()
-    # print(d.game)
-    # g = Game()
-    # cube.games.append(g)
-    # d2 = Deck(player=d.player, name=d.name, description=d.description)
-    # for deck_card in d.cards:
-        # DeckList(deck=d2, card=deck_card.card, amount=deck_card.amount, note=deck_card.note)
-    # g.decks.append(d2)
-    # session.commit()
-    # print(g)
-    # print(g.decks)
-    # print(g.decks[0].cards)
-    # print(d)
-    # card = session.query(Card).filter(Card.name == "Island").first()
-    # card2 = session.query(Card).filter(Card.name == "Snap").first()
-    # deck = Deck()
-    
-    # deck.cards.append(card)
-    # print(deck)
-##    
-##    print(cube)
-##    card = session.query(Card).filter(Card.name == "Island").first()
-##    card2 = session.query(Card).filter(Card.name == "Snap").first()
-##    deck = session.query(Deck).filter(Deck.id == 6).first()
-##    print(card)
-##    deck.add_card(card, 10)
-##    deck.add_card(card2, 3)
-##    print(deckstat.get_deck_url(deck))
-##    print(deck)
-##    print(deck.cards)
-##    scan_card_to_write_url(cube)
-    
-    
-    # cube.last_update = datetime.strptime("2020-09-15 13:58:21","%Y-%m-%d %H:%M:%S")
-    # update_cube(cube)
-    """To delete deck and his DeckList:
-        deck = db.session.query(Deck).get(1)
-       deck.cards = []
-       session.delete(deck)
-       db.session.commit()
-    """
-    # import audio
-    # audio.audio_scan_test(cube)
-    # cube = create_cube()
-    # update_cube(cube)
-    # cube = scan_card_for_DB(cube)
-    # test_scan(cube)
+#     c = Cube(name="Saltless City EDH Cube", cubecobra_id="5e25e166a9a76f129adb0893")
+#     session.add(c)
+#     import_cubecobra(c)
+#     session.commit()
+#
+#     c1 = Cube(name="Commander Pool", cubecobra_id="5e74a7e740eaf0158e316de3")
+#     session.add(c1)
+#     import_cubecobra(c1)
+#     session.commit()
+#
+#     regalias = """Âme Hellbent.jpg;https://drive.google.com/file/d/154iIEfjDs1k4ofku5FGFUv2XKx0DC3lJ/view?usp=sharing
+# And you tap tap tap....jpg;https://drive.google.com/file/d/1aIiyNClBWgTypgWAltO_fkcAs4-2aVz-/view?usp=sharing
+# Beastcallers Scepter.jpg;https://drive.google.com/file/d/1KDea0Nl7MfP5ms-yzqoj7Srxx7KQB8tC/view?usp=sharing
+# Cant touch me.jpg;https://drive.google.com/file/d/1aVLXpnawj6J-Tv9ol8cSj3_zkPbnoWMJ/view?usp=sharing
+# Chromatic Style.jpg;https://drive.google.com/file/d/1_V_n7kZs-bamtNwE5VqKtQpR4cJTPMoB/view?usp=sharing
+# Clockwork Bauble.jpg;https://drive.google.com/file/d/1XaCQwQQRwWA_aVwPzICN34gjFrIAr5JJ/view?usp=sharing
+# Dragonform Cloak.jpg;https://drive.google.com/file/d/1cy3r4n0mOULZVVlB5Tq7sN1Ia-dawpwS/view?usp=sharing
+# Enchanters Scepter.jpg;https://drive.google.com/file/d/1uISmf6Xoda4e45dJrT9ZBg9MlOoLwkSl/view?usp=sharing
+# Gayvins style.jpg;https://drive.google.com/file/d/1xpunpen3SBFlVsKuK15AsP21sGbm8iKV/view?usp=sharing
+# Golden Eggs.jpg;https://drive.google.com/file/d/1nRNZFRGh3P8cWE0ugMi7Wmsnlf_A6Gve/view?usp=sharing
+# Im a Legend.jpg;https://drive.google.com/file/d/1ABGGH_rIwKCbfsO5tx0NMnpxZJmM_l74/view?usp=sharing
+# Iron Armor.jpg;https://drive.google.com/file/d/1lovSpl4R-fLqcYw-Jx6Ufj0MhbO51NMs/view?usp=sharing
+# Iron Scepter.jpg;https://drive.google.com/file/d/1w4KOccHVoNBWkqFTeY-oq4dpOcuEm36-/view?usp=sharing
+# Mark of Life and Death.jpg;https://drive.google.com/file/d/1PR2U0ERwxXjpT03H-oHG08bhJ6lsy5vX/view?usp=sharing
+# Mark of the Hive.jpg;https://drive.google.com/file/d/15_yt8w8JKdtKuY8BbW4eQs1DMkNlXoUf/view?usp=sharing
+# Mirrored Tattoos.jpg;https://drive.google.com/file/d/1a0zQRA7CFMH5S1bAAqUPE25CQFMaMOo_/view?usp=sharing
+# Panard de Monique On.jpg;https://drive.google.com/file/d/1cvWur_pNu1qqoKVvYgIbBG6nQX5MWjQJ/view?usp=sharing
+# Peace and Love Bitch.jpg;https://drive.google.com/file/d/1YMvImoBHpGVrnfhceY1GlEUeJfcbt7dE/view?usp=sharing
+# Political Gift.jpg;https://drive.google.com/file/d/1rTmMFxnU5IWB3gIyMIPi6mGNWCNiFNeV/view?usp=sharing
+# Scepter of Conjuration.jpg;https://drive.google.com/file/d/11BydeQzXo7efn0XB6eM5sPP3I_mmCGVn/view?usp=sharing
+# Scepter of Destiny.jpg;https://drive.google.com/file/d/12jaXbIjRVsPkETqsn_Qoe2tADF4Ho4eI/view?usp=sharing
+# Scepter of the Worthy.jpg;https://drive.google.com/file/d/113vJM012W_OtqHV9klAVHQiOnUUf0GFv/view?usp=sharing
+# Spellslinger.jpg;https://drive.google.com/file/d/1J5KforfmasXNMKJHbsjwbMl286UxOiuT/view?usp=sharing
+# Staff of the Heroes.jpg;https://drive.google.com/file/d/15g9xPEvkbl4NhqczILKVsm9lzcWdspkh/view?usp=sharing
+# Staff of the Man A-Fixing.jpg;https://drive.google.com/file/d/1iA9SsVz-qhIMFCVhpUIs6ZdbU-egJVT4/view?usp=sharing
+# Staff of the Walkers.jpg;https://drive.google.com/file/d/1eqA-1wNJ_Vtc_P0_R30VTY8ks4e20hRK/view?usp=sharing
+# Suit Up .jpg;https://drive.google.com/file/d/1IXO98D6uG4UYYeuLmiF9CULY8rD_vcYs/view?usp=sharing
+# Trail of Opportunity.jpg;https://drive.google.com/file/d/1Ylqz4qb1aeRSeXPD3OrhcmydY7sscu7v/view?usp=sharing
+# Tree OCloak.jpg;https://drive.google.com/file/d/1NFi5KCWuGKwSg4D1pxFeEDRGooSiPtvL/view?usp=sharing
+# Tribal King Flag.jpg;https://drive.google.com/file/d/1CIOHnnyXUaiaHeOYkcDe7UyvkSqrzgc2/view?usp=sharing
+# Tribal King Seal.jpg;https://drive.google.com/file/d/1IigQcNaAAr5XALrcHM5Kp0ind34YnWwg/view?usp=sharing
+# Uncommander.jpg;https://drive.google.com/file/d/1bXfM444nNGUrzoBrPn13E5MD-NcXDI29/view?usp=sharing
+# Underworld Bar Gains.jpg;https://drive.google.com/file/d/17UuCkrvlqSCupaIV1jB_agmOZOIk40_w/view?usp=sharing
+# Violet Lotus Cloak.jpg;https://drive.google.com/file/d/1WbAY0Lt6uQxL-hiuu4t-6I00DEAOfVJK/view?usp=sharing
+# Walker Texas Ranger.jpg;https://drive.google.com/file/d/1zDHD89-VAZiu8DeG7YXvDlfdcds_SRnT/view?usp=sharing
+# Wandering Eye.jpg;https://drive.google.com/file/d/1Qp7Nz9y0fiYOO_Njf4zlZ76KCVwOpTVW/view?usp=sharing"""
+#
+#     for regalia in regalias.split("\n"):
+#         r = regalia.split(";")
+#         name = r[0].split(".jpg")[0]
+#         url = r[1]
+#         c.cards.append(Card(name=name, type_line="Regalia", image_url=url))
+#
+#     logging.info("Regalias imported")
+#     session.commit()
     
     

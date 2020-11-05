@@ -264,13 +264,13 @@ class Draft(Base):
     cube_id = Column(Integer, ForeignKey("cube.id"))
     cube = relationship("Cube")
 
-    def __init__(self, cube, round_num=2, booster_size=3, auto_pick_last_card=True):
+    partners = [{"name":"Krav, the Unredeemed", "partner":"Regna, the Redeemer"},
+                {"name": "Virtus the Veiled", "partner": "Gorm the Great"},
+                {"name": "Brallin, Skyshark Rider", "partner": "Shabraz, the Skyshark"}]
+
+    def __init__(self, cube, round_num=6, booster_size=9, auto_pick_last_card=True):
         self.cube = cube
-        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == cube.id, Card.type_line != "Basic Land", Card.tags != "Draft").all()
-        shuffle(cube_cards)
-        logging.info(f"{len(cube_cards)} cards selected.")
-        # TODO: remove Booster where len is not equal to booster_size
-        self.boosters = [Booster(n+1, cube_cards[i:i+booster_size]) for n, i in enumerate(range(0, len(cube_cards), booster_size)) if i+booster_size < len(cube_cards)]
+        self.boosters = []
         self.booster_size = booster_size
         self.round_num = round_num
         self.state = "INIT"
@@ -288,12 +288,16 @@ class Draft(Base):
 
     @hybrid_method
     def start(self):
+        if not self.boosters:
+            logging.info("No boosters loaded")
+            return False
         logging.info("DRAFT STARTS")
         session.add(self)
         self.round = self.get_round()
         self.state = "PLAY"
         session.commit()
         logging.info(self)
+        return True
 
     @hybrid_method    
     def get_round(self):
@@ -383,8 +387,9 @@ class Drafter():
         self.pick_count = 1
         
     def choose(self, card):
-        self.choice = Choice(self, card, self.draft.round_count, self.pick_count)
-        return self.draft.control_choices()
+        if card in self.get_booster().cards:
+            self.choice = Choice(self, card, self.draft.round_count, self.pick_count)
+            return self.draft.control_choices()
         
     def pick(self):
         booster = self.get_booster()
@@ -394,7 +399,11 @@ class Drafter():
             session.add(self.choice)
             booster.from_drafter = self
             session.commit()
-            booster.cards.remove(self.choice.card)
+            booster.remove_card(self.choice.card)
+            # Control if partner with TODO : Wrapper
+            for partner in self.draft.partners:
+                if self.choice.card.name == partner["name"]:
+                    self.pool.append(session.query(Card).filter(Card.name == partner["partner"]).first())
             self.pool.append(self.choice.card)
             self.choice = None
             self.pick_count += 1
@@ -443,7 +452,12 @@ class Booster():
         self.id = id
         self.cards = cards
         self.from_drafter = from_drafter
-        
+
+    def remove_card(self, card):
+        if card in self.cards:
+            self.cards.remove(card)
+            return card
+
     def __repr__(self):
         return f"<Booster(id={self.id}, size={len(self.cards)}, from_drafter={self.from_drafter})>"
         

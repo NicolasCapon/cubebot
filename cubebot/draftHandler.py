@@ -1,6 +1,8 @@
 ﻿import re
+import io
 import deckstat_interface as deckstat
 import logging
+from utils import set_boosters
 from time import sleep
 from random import shuffle
 from filters import restrict, SealedConv, UserType
@@ -15,6 +17,7 @@ class DraftHandler():
         self.dispatcher = dispatcher
         self.players = []
         self.subscribers = []
+        self.cube = None
         # Draft
         self.draft = None
         self.drafted_card_handler = None
@@ -28,47 +31,84 @@ class DraftHandler():
     def get_select_player_convHandler(self, command, behaviour):
         
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler(command, self.start_select_player)],
+            entry_points=[CommandHandler(command, self.start_select_cube)],
             states={
-                SealedConv.CHOOSING: [CallbackQueryHandler(partial(self.choose_player, behaviour))]
+                SealedConv.CUBE: [CallbackQueryHandler(self.choose_cube, pattern=r"cube_id=(\d*)$")],
+                SealedConv.CHOOSING: [CallbackQueryHandler(partial(self.choose_player, behaviour),
+                                                           pattern=r"player_id=(\d*)$")]
                 },
             fallbacks=[])
 
         return conv_handler
     
-    def get_select_player_keyboard(self, players, subscribers):
+    def get_select_player_keyboard(self):
         # subscribers = sealed_players
         keyboard = []
-        if len(subscribers) < 4:
-            for player in players:
-                if player not in subscribers:
-                    keyboard.append([InlineKeyboardButton(player.name, callback_data=player.id)])
-        if len(subscribers):
-            keyboard.append([InlineKeyboardButton("Corriger", callback_data="-1"),
-                             InlineKeyboardButton("Envoyer", callback_data="1")])
-        keyboard.append([InlineKeyboardButton("Annuler", callback_data="0")])
+        if len(self.subscribers) < 5:
+            for player in self.players:
+                if player not in self.subscribers:
+                    keyboard.append([InlineKeyboardButton(player.name, callback_data=f"player_id={player.id}")])
+        if len(self.subscribers):
+            keyboard.append([InlineKeyboardButton("Corriger", callback_data="player_id=2"),
+                             InlineKeyboardButton("Envoyer", callback_data="player_id=1")])
+        keyboard.append([InlineKeyboardButton("Annuler", callback_data="player_id=0")])
         return keyboard
-            
+
     @restrict(UserType.ADMIN)
-    def start_select_player(self, update, context):
-        self.players = session.query(Player).all()
-        reply_markup = InlineKeyboardMarkup(self.get_select_player_keyboard(self.players, self.subscribers))
-        text = "Selectionne les joueurs qui participeront :"
-        message = update.message.reply_text(text=text,
-                                            reply_markup=reply_markup)
-        return SealedConv.CHOOSING
+    def start_select_cube(self, update, context):
+        keyboard = []
+        cubes = session.query(Cube).all()
+        for cube in cubes:
+            keyboard.append([InlineKeyboardButton(cube.name, callback_data=f"cube_id={cube.id}")])
+        keyboard.append([InlineKeyboardButton("Annuler", callback_data="cube_id=0")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        text = "Selectionne un cube :"
+        update.message.reply_text(text=text,
+                                  reply_markup=reply_markup)
+        return SealedConv.CUBE
+
+    def choose_cube(self, update, context):
+        query = update.callback_query
+        reg = re.compile(r"cube_id=(\d*)")
+        match = int(reg.findall(query.data)[0])
+
+        if match == 0:
+            text = "Limité annulé, pour recommencer: /sealed ou /draft"
+            query.edit_message_text(text=text)
+            return ConversationHandler.END
+
+        else:
+            self.cube = session.query(Cube).filter(Cube.id == match).one()
+            self.players = session.query(Player).all()
+            reply_markup = InlineKeyboardMarkup(self.get_select_player_keyboard())
+            text = f"Cube sélectionné: {self.cube.name}\nSélectionne maintenant les joueurs qui participeront :"
+            query.edit_message_text(text=text,
+                                    reply_markup=reply_markup)
+            return SealedConv.CHOOSING
+
+    #
+    # @restrict(UserType.ADMIN)
+    # def start_select_player(self, update, context):
+    #     self.players = session.query(Player).all()
+    #     reply_markup = InlineKeyboardMarkup(self.get_select_player_keyboard(self.players, self.subscribers))
+    #     text = "Selectionne les joueurs qui participeront :"
+    #     update.message.reply_text(text=text,
+    #                               reply_markup=reply_markup)
+    #     return SealedConv.CHOOSING
         
     def choose_player(self, behaviour, *args):
         update, context = args
         query = update.callback_query
+        reg = re.compile(r"player_id=(\d*)")
+        match = reg.findall(query.data)[0]
         
-        if query.data == "0":
-            text = "Limité annulé, pour recommencer: /sealed"
+        if match == "0":
+            text = "Limité annulé, pour recommencer: /sealed ou /draft"
             query.edit_message_text(text=text)
             self.subscribers = []
             return ConversationHandler.END
         
-        elif query.data == "1":
+        elif match == "1":
             # players are selected, start something
             text = "Joueurs selectionnés:\n"
             for player in self.subscribers:
@@ -78,7 +118,7 @@ class DraftHandler():
             self.subscribers = []
             return ConversationHandler.END
         
-        elif query.data == "-1":
+        elif match == "2":
             # Remove last
             del self.subscribers[-1]
             text = "Joueurs selectionnés:\n"
@@ -87,13 +127,13 @@ class DraftHandler():
         
         else:
             # Add player
-            player = session.query(Player).filter(Player.id == int(query.data)).first()
+            player = session.query(Player).filter(Player.id == int(match)).first()
             self.subscribers.append(player)
             text = "Joueurs selectionnés:\n"
             for player in self.subscribers:
                 text += f"- <a href='tg://user?id={player.id}'>{player.name}</a>\n"
         
-        reply_markup = InlineKeyboardMarkup(self.get_select_player_keyboard(self.players, self.subscribers))
+        reply_markup = InlineKeyboardMarkup(self.get_select_player_keyboard())
         query.edit_message_text(text=text,
                                 parse_mode="HTML",
                                 reply_markup=reply_markup)
@@ -101,7 +141,7 @@ class DraftHandler():
         
     def start_sealed(self, update, context):
         # Send sealed
-        cards = session.query(Card).join(CubeList).join(Cube).filter(Cube.id == 1, Card.type_line != "Basic Land").all()
+        cards = session.query(Card).join(CubeList).join(Cube).filter(Cube.id == self.cube.id, Card.type_line != "Basic Land").all()
         shuffle(cards)
         shuffle(self.subscribers)
         sealed_size = 90
@@ -167,27 +207,37 @@ class DraftHandler():
             if max > len(cards): max = len(cards)
             for n in range(i, max, 1):
                 if drafter.choice and cards[n] == drafter.choice.card:
-                    text += f"{n+1}) <b><a href='https://scryfall.com/card/{cards[n].scryfall_id}'>{cards[n].name}</a></b>{choice_emoji}\n"
+                    text += f"{n+1}) <b><a href='{cards[n].image_url}'>{cards[n].name}</a></b>{choice_emoji}\n"
                 else:
-                    callback_data = f"[{self.draft.id}]card_id={cards[n].id}"
+                    callback_data = f"[{self.get_callback_pattern(id_only=True)}]card_id={cards[n].id}"
                     row.append(InlineKeyboardButton(f"{n+1}", callback_data=callback_data))
-                    text += f"{n+1}) <a href='https://scryfall.com/card/{cards[n].scryfall_id}'>{cards[n].name}</a>\n"
+                    text += f"{n+1}) <a href='{cards[n].image_url}'>{cards[n].name}</a>\n"
             keyboard.append(row)
 
         return text, InlineKeyboardMarkup(keyboard)
-        
-        
+
+    def get_callback_pattern(self, id_only=False):
+        # pattern example: [3124]card_id=208
+        # If pattern is False return only the id
+        i = f"{self.draft.id}{self.draft.round_count}{self.draft.drafters[0].pick_count}"
+        if id_only: return i
+        p = r"^\[" + i + r"\]card_id=(\d*)$"
+        logging.info(f"Callback pattern: {p}")
+        return p
+
     def start_draft(self, update, context):
         # Remove entry point
         self.dispatcher.remove_handler(self.draft_handler)
-        cube = session.query(Cube).first()
-        self.draft = Draft(cube)
+        self.draft = Draft(cube=self.cube)
         [self.draft.add_drafter(Drafter(s.id, s.name)) for s in self.subscribers]
+        remaining_cards, filename = set_boosters(self.draft)
+        self.send_doc(chat_id=update.callback_query.from_user.id,
+                      context=context,
+                      content=remaining_cards,
+                      filename=filename)
         self.draft.start()
-        # Draft specific regex
-        pattern = r"^\[" + str(self.draft.id) + r"\]card_id=(\d*)$"
-        logging.info(f"Callback pattern: {pattern}")
-        self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=pattern)
+
+        self.drafted_card_handler = CallbackQueryHandler(self.choose_card, pattern=self.get_callback_pattern())
         self.dispatcher.add_handler(self.drafted_card_handler)
         self.draft_pool_handler = CommandHandler("pool", self.get_drafter_pool)
         self.dispatcher.add_handler(self.draft_pool_handler)
@@ -215,6 +265,8 @@ class DraftHandler():
         
         # If new booster or new round, we edit previous query message then send new reply markup for all drafters
         if is_new_booster or is_new_round:
+            # Update callback pattern to avoid an old callback to to send wrong data
+            self.drafted_card_handler.pattern = self.get_callback_pattern()
             for drafter in self.draft.drafters:
                 # If auto pick is activated, send the auto pick to drafter
                 if is_new_round and self.draft.auto_pick_last_card:
@@ -229,6 +281,7 @@ class DraftHandler():
                     self.send_card(drafter.pool[-1],
                                    msg_data=drafter.data["query"],
                                    title=f"Ronde {round_count} Pick {pick_count}")
+
                 text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster=is_new_booster)
                 context.bot.send_message(chat_id=drafter.id,
                                          text=text,
@@ -256,7 +309,7 @@ class DraftHandler():
 
     @staticmethod
     def send_card(card, msg_data, title, context=None):
-        text = f"<a href='https://scryfall.com/card/{card.scryfall_id}'>{title}</a>"
+        text = f"<a href='{card.image_url}'>{title}</a>"#https://scryfall.com/card/
         if context:
             context.bot.send_message(chat_id=msg_data,
                                      text=text,
@@ -268,3 +321,13 @@ class DraftHandler():
                                     disable_web_page_preview=False)
 
         sleep(0.1)
+
+    @staticmethod
+    def send_doc(chat_id, context, content, filename):
+        s = io.StringIO(content)
+        s.seek(0)
+        document = io.BytesIO()
+        document.write(s.getvalue().encode())
+        document.seek(0)
+        document.name = filename
+        context.bot.send_document(chat_id=chat_id, document=document)

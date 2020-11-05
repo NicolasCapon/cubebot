@@ -43,6 +43,8 @@ def get_deck_url(deck):
 def get_sealed_url(cards, title):
     decklist = ""
     for i, card in enumerate(cards):
+        # if card.type_line == "Regalia":
+        #     continue
         br = "\n"
         decklist += f"1x [{card.set_code}] {card.name}{br if i<len(cards)-1 else ''}"
     
