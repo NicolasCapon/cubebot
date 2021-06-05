@@ -1,7 +1,8 @@
 /init with param to choose cube
 (upload decks on cubecobra)
+Relier draft et cube
 
-Recharger la partie dans la nouvelle base
-(game id = 3)
 
-/rematch pour charger les decks d'une ancienne partie
+Tester la mise à jour cubecobra pour les cartes //
+Tester l'import si pas de description au deck deckstat
+

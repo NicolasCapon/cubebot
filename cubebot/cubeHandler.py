@@ -21,7 +21,7 @@ from sqlalchemy import create_engine
 class CubeHandler():
 
     def __init__(self, dispatcher):
-        
+
         # Update cube based on cubecobra
         # update_count = utils.update_cube(self.cube)
         # context.bot.send_message(chat_id=config.chat_id,
@@ -42,7 +42,7 @@ class CubeHandler():
         # model
         self.cube, self.game = None, None
         self.draftHandler = DraftHandler(dispatcher)
-        
+
     @restrict(UserType.ADMIN)
     def new_game(self, update, context):
         # Remove entry point to only have one game at time
@@ -193,7 +193,8 @@ class CubeHandler():
 
     def choose_card(self, update, context):
         answer = update.message.text
-        c = session.query(CubeList).join(Card).filter(Card.name.like(f"{answer}%")).first()
+        # Search card in current cube list
+        c = session.query(CubeList).join(Card).filter(CubeList.cube_id == self.cube.id).filter(Card.name.like(f"{answer}%")).first()
         avert = "Attention cette carte est déjà signée !\n"
         if c:
             if c.signature:

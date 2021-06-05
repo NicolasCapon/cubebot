@@ -1,3 +1,5 @@
-deck - start scanning
+scan - scan your deck
 mydeck - edit your deck
+load_deck - load last deck
+load_deckstats - load from url as parameter
 help - get bot doc

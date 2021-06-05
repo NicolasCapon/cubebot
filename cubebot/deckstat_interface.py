@@ -12,7 +12,7 @@ def load_deck(url):
     r = requests.get(url)
     if r.ok:
         data = r.content.decode('utf-8')
-        p = re.compile(r"init_deck_data\((.*)\)")
+        p = re.compile(r"init_deck_data\((.*)\);deck_display")
         m = p.search(data)
         if not m: return False
         content = json.loads(m.group(1))
@@ -72,10 +72,4 @@ def get_url(decklist, decktitle):
         return None
         
 if __name__ == "__main__":
-    from model import Card, Deck
-    c1 = Card(name="Snap")
-    c2 = Card(name="Tropical Island")
-    deck = Deck(name="test")
-    deck.cards.append(c1)
-    deck.cards.append(c2)
-    print(get_deck_url(deck))
+    print(load_deck("https://deckstats.net/decks/52569/1841513-draft-de-nicolas-du-02-12-2020?share_key=MXAtDmlExsQZU72B").get("title"))

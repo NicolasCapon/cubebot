@@ -9,6 +9,7 @@ from model import *
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 from sqlalchemy import not_
+from sqlalchemy.orm.exc import NoResultFound, MultipleResultsFound
 import csv
 import requests
 import feedparser
@@ -18,23 +19,21 @@ from bs4 import BeautifulSoup
 from pn532 import PN532_SPI
 from deckstat_interface import get_sealed_url
 
-def create_cube():
-    c = Cube(name="Multiplayer Yolo Cube",
-             cubecobra_id = "5dd42bd004af383a21c92eb9")
+
+def create_cube(name, cubecobra_id):
+    c = Cube(name=name,
+             cubecobra_id=cubecobra_id)
              #last_update=datetime.strptime("2020-04-01 13:58:21","%Y-%m-%d %H:%M:%S"))
     logging.info(f"Cube created: {c}")
-    p = Player(id=config.admin_id, name="Nicolas", is_admin=True)
-    logging.info(f"Player added: {p}")
     session.add(c)
-    session.add(p)
     import_cubecobra(c)
-    import_basic_lands(c)
     session.commit()
     logging.info("commit")
     return c
-    
-def import_cubecobra(cube, include_maybeboard=False):
-    cards = get_cube_list(cube, from_file=False) #True if test on update
+
+
+def import_cubecobra(cube, include_maybeboard=False, from_file=False):
+    cards = get_cube_list(cube, from_file=from_file) #True if test on update
     cards = tqdm(cards, total=len(cards))
     cards.set_description(f"Cube creation")
     for card in cards:
@@ -52,6 +51,7 @@ def import_cubecobra(cube, include_maybeboard=False):
         
     logging.info("CubeCobra succesfully imported")
     return cube
+
 
 def add_scryfall_infos(card):
     """Add scryfall id, image_url
@@ -95,6 +95,7 @@ def import_basic_lands(cube):
     
     logging.info("Basic Lands succesfully imported")
 
+
 def get_cube_list(cube, from_file=False):
     if from_file:
         # Old file for testing updates
@@ -108,12 +109,13 @@ def get_cube_list(cube, from_file=False):
         
         url = "https://cubecobra.com/cube/download/csv/" + cube.cubecobra_id
         logging.info(f"fetch cube list on {url}")
-        response = requests.get(url, params=params)
+        response = requests.get(url)#, params=params)
         data = response.text
-
+    print(response.content)
     csv_reader = csv.DictReader(data.splitlines())
     return list(csv_reader)
-    
+
+
 def quick_scan(cube):
     """Show card on screen then scan it to pear tag id to card in DB"""
     pn532 = PN532_SPI(debug=False, reset=20, cs=4)
@@ -165,7 +167,8 @@ def scan_card_for_DB(cube):
             logging.info("Multiple cards found, try again")
 
     return cube
-    
+
+
 def scan_card_to_write_url(cube):
     """Scan card to write card url on tag"""
     pn532 = PN532_SPI(debug=False, reset=20, cs=4)
@@ -192,6 +195,7 @@ def scan_card_to_write_url(cube):
         elif not card:
             logging.info("Card not recognized or already scanned.")
 
+
 def test_scan(cube):
     cubelist = session.query(CubeList).join(Card).filter(CubeList.uid != None).all()
     pn532 = PN532_SPI(debug=False, reset=20, cs=4)
@@ -210,7 +214,9 @@ def test_scan(cube):
         if c:
            logging.info(c.card)
 
+
 def update_cube(cube):
+    """WARNING: Only works on singleton cubes for now"""
     rss = "https://cubecobra.com/cube/rss/" + cube.cubecobra_id
     updates = feedparser.parse(rss).entries
     t1 = mktime(cube.last_update.timetuple())
@@ -239,10 +245,21 @@ def update_cube(cube):
                 # Update card
                 old_card_name = cards[0].string
                 new_card_name = cards[1].string
-                card_to_update = session.query(CubeList).join(Card).filter(Card.name == old_card_name,
-                                                                     CubeList.cube_id == cube.id).one()
-                # card_to_update = session.query(CubeList).filter(CubeList.card_id == old_card.id,
-                #                                                 CubeList.cube_id == cube.id).one()
+                try:
+                    card_to_update = session.query(CubeList).join(Card).filter(Card.name == old_card_name,
+                                                                         CubeList.cube_id == cube.id).one()
+                except NoResultFound as e:
+                    logging.info(f"[{old_card_name}] {e}")
+                finally:
+                    # some cards with "//" in their name on scryfall are without "//" on cubecobra
+                    card_to_update = session.query(CubeList).join(Card).filter(Card.name.like(old_card_name+" // %"),
+                                                                         CubeList.cube_id == cube.id).first()
+                if not card_to_update:
+                    text = f"[{old_card_name} // %] also not found on DB for cube {cube.id}. "\
+                            "Considere changing manually {old_card_name} → {new_card_name}"
+                    logging.info(text)
+                    continue
+                
                 new_card = Card(name=new_card_name)
                 session.add(new_card)
                 session.flush()
@@ -252,14 +269,30 @@ def update_cube(cube):
             elif c.span and c.span.string == "+" and len(cards) == 1:
                 # Add card 
                 new_card_name = cards[0].string
-                cube.append(Card(name=new_card_name))
+                cube.cards.append(Card(name=new_card_name))
                 logging.info(f"+[{new_card_name}]")
             elif c.span and c.span.string == "-" and len(cards) == 1:
                 # Remove card
                 old_card_name = cards[0].string
-                session.query(CubeList).join(Card).filter(Card.name == old_card_name,
-                                                          CubeList.cube_id == cube.id).delete()
+                try:
+                    r = session.query(CubeList).join(Card).filter(Card.name == old_card_name,
+                                                                CubeList.cube_id == cube.id).one()
+                except NoResultFound as e:
+                    logging.info(f"[{old_card_name}] {e}")
+                    # some cards with "//" in their name on scryfall are without "//" on cubecobra
+                    r = session.query(CubeList).join(Card).filter(Card.name.like(old_card_name+" // %"),
+                                                                                 CubeList.cube_id == cube.id).all()
+                    if len(r) == 1:
+                        r = r[0]
+                    else:
+                        text = f"[{old_card_name} // %] also not found on DB for cube {cube.id}. "\
+                               f"Considere deleting manually {old_card_name}"
+                        logging.info(text)
+                        continue
+                    
+                session.delete(r)
                 logging.info(f"-[{old_card_name}]")
+                    
         if i == len(updates_to_proceed)-1:
             # On last update, we update cards data based on csv
             # logging.info(">>>Load csv and crawl scryfall to fill missing cards data...")
@@ -286,6 +319,7 @@ def update_cube(cube):
             session.commit()
     return len(updates_to_proceed)
 
+
 def write_url_to_tag(url, scanner, block_size=4, write_size=16):
     records = [ndef.UriRecord(url)]
     data = b"\x03<" + b"".join(ndef.message_encoder(records)) + b"\xfe"
@@ -300,7 +334,8 @@ def write_url_to_tag(url, scanner, block_size=4, write_size=16):
             logging.error(f"Error while writing url [{url}] on {n+4}th block [{block}].")
             return r
     return r
-    
+
+
 def remove_games_from_cube(cube, state):
     """Remove all games and associated decks from game with specified state"""
     for game in cube.games:
@@ -315,9 +350,10 @@ def remove_games_from_cube(cube, state):
             cube.games.remove(game)
     session.commit()
 
+
 def set_boosters(draft):
     boosters = []
-    if draft.cube.id == 1:
+    if draft.cube.id in [1,5]:
         draft.booster_size = 9
         draft.round_num = 5
         cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == draft.cube.id,
@@ -329,13 +365,13 @@ def set_boosters(draft):
         for drafter in draft.drafters:
             for i in range(draft.round_num):
                 booster_cards = []
-                # 12 cards per boost
+                # 9 cards per boost
                 while len(booster_cards) < draft.booster_size:
                     booster_cards.append(cube_cards.pop())
                 boosters.append(Booster(id=n, cards=booster_cards))
                 n += 1
 
-    elif draft.cube.id == 2:
+    elif draft.cube.id == 4:
         # Custom function for Greg Cube Draft
         commanders = session.query(Card).join(CubeList).filter(CubeList.cube_id == 3,
                                                                Card.type_line != "Basic Land",
@@ -345,7 +381,7 @@ def set_boosters(draft):
             commanders.append(session.query(Card).join(CubeList).filter(CubeList.cube_id == 3,
                                                                         Card.name == partner["name"]).first())
 
-        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == 2,
+        cube_cards = session.query(Card).join(CubeList).filter(CubeList.cube_id == 4,
                                                                Card.type_line != "Basic Land").all()
 
         shuffle(cube_cards)
@@ -357,11 +393,10 @@ def set_boosters(draft):
             for i in range(5):
                 booster_cards = []
                 # 12 cards per boost
-                while len(booster_cards) < 12:#12
+                while len(booster_cards) < 12:
                     booster_cards.append(cube_cards.pop())
                 boosters.append(Booster(id=n, cards=booster_cards))
                 n += 1
-
 
         command_tower = session.query(Card).filter(Card.name == "Command Tower").first()
         # Add commander last to be poped first during draft
@@ -388,6 +423,7 @@ def set_boosters(draft):
 
     return content, filename
 
+
 if __name__ == "__main__":
     """To test update :
     - create cube with last_update = 2020-04-01 13:58:21
@@ -397,60 +433,36 @@ if __name__ == "__main__":
                        # filename=config.log_file,
                         level=config.log_level)
 
-#     c = Cube(name="Saltless City EDH Cube", cubecobra_id="5e25e166a9a76f129adb0893")
-#     session.add(c)
-#     import_cubecobra(c)
-#     session.commit()
-#
-#     c1 = Cube(name="Commander Pool", cubecobra_id="5e74a7e740eaf0158e316de3")
-#     session.add(c1)
-#     import_cubecobra(c1)
-#     session.commit()
-#
-#     regalias = """Âme Hellbent.jpg;https://drive.google.com/file/d/154iIEfjDs1k4ofku5FGFUv2XKx0DC3lJ/view?usp=sharing
-# And you tap tap tap....jpg;https://drive.google.com/file/d/1aIiyNClBWgTypgWAltO_fkcAs4-2aVz-/view?usp=sharing
-# Beastcallers Scepter.jpg;https://drive.google.com/file/d/1KDea0Nl7MfP5ms-yzqoj7Srxx7KQB8tC/view?usp=sharing
-# Cant touch me.jpg;https://drive.google.com/file/d/1aVLXpnawj6J-Tv9ol8cSj3_zkPbnoWMJ/view?usp=sharing
-# Chromatic Style.jpg;https://drive.google.com/file/d/1_V_n7kZs-bamtNwE5VqKtQpR4cJTPMoB/view?usp=sharing
-# Clockwork Bauble.jpg;https://drive.google.com/file/d/1XaCQwQQRwWA_aVwPzICN34gjFrIAr5JJ/view?usp=sharing
-# Dragonform Cloak.jpg;https://drive.google.com/file/d/1cy3r4n0mOULZVVlB5Tq7sN1Ia-dawpwS/view?usp=sharing
-# Enchanters Scepter.jpg;https://drive.google.com/file/d/1uISmf6Xoda4e45dJrT9ZBg9MlOoLwkSl/view?usp=sharing
-# Gayvins style.jpg;https://drive.google.com/file/d/1xpunpen3SBFlVsKuK15AsP21sGbm8iKV/view?usp=sharing
-# Golden Eggs.jpg;https://drive.google.com/file/d/1nRNZFRGh3P8cWE0ugMi7Wmsnlf_A6Gve/view?usp=sharing
-# Im a Legend.jpg;https://drive.google.com/file/d/1ABGGH_rIwKCbfsO5tx0NMnpxZJmM_l74/view?usp=sharing
-# Iron Armor.jpg;https://drive.google.com/file/d/1lovSpl4R-fLqcYw-Jx6Ufj0MhbO51NMs/view?usp=sharing
-# Iron Scepter.jpg;https://drive.google.com/file/d/1w4KOccHVoNBWkqFTeY-oq4dpOcuEm36-/view?usp=sharing
-# Mark of Life and Death.jpg;https://drive.google.com/file/d/1PR2U0ERwxXjpT03H-oHG08bhJ6lsy5vX/view?usp=sharing
-# Mark of the Hive.jpg;https://drive.google.com/file/d/15_yt8w8JKdtKuY8BbW4eQs1DMkNlXoUf/view?usp=sharing
-# Mirrored Tattoos.jpg;https://drive.google.com/file/d/1a0zQRA7CFMH5S1bAAqUPE25CQFMaMOo_/view?usp=sharing
-# Panard de Monique On.jpg;https://drive.google.com/file/d/1cvWur_pNu1qqoKVvYgIbBG6nQX5MWjQJ/view?usp=sharing
-# Peace and Love Bitch.jpg;https://drive.google.com/file/d/1YMvImoBHpGVrnfhceY1GlEUeJfcbt7dE/view?usp=sharing
-# Political Gift.jpg;https://drive.google.com/file/d/1rTmMFxnU5IWB3gIyMIPi6mGNWCNiFNeV/view?usp=sharing
-# Scepter of Conjuration.jpg;https://drive.google.com/file/d/11BydeQzXo7efn0XB6eM5sPP3I_mmCGVn/view?usp=sharing
-# Scepter of Destiny.jpg;https://drive.google.com/file/d/12jaXbIjRVsPkETqsn_Qoe2tADF4Ho4eI/view?usp=sharing
-# Scepter of the Worthy.jpg;https://drive.google.com/file/d/113vJM012W_OtqHV9klAVHQiOnUUf0GFv/view?usp=sharing
-# Spellslinger.jpg;https://drive.google.com/file/d/1J5KforfmasXNMKJHbsjwbMl286UxOiuT/view?usp=sharing
-# Staff of the Heroes.jpg;https://drive.google.com/file/d/15g9xPEvkbl4NhqczILKVsm9lzcWdspkh/view?usp=sharing
-# Staff of the Man A-Fixing.jpg;https://drive.google.com/file/d/1iA9SsVz-qhIMFCVhpUIs6ZdbU-egJVT4/view?usp=sharing
-# Staff of the Walkers.jpg;https://drive.google.com/file/d/1eqA-1wNJ_Vtc_P0_R30VTY8ks4e20hRK/view?usp=sharing
-# Suit Up .jpg;https://drive.google.com/file/d/1IXO98D6uG4UYYeuLmiF9CULY8rD_vcYs/view?usp=sharing
-# Trail of Opportunity.jpg;https://drive.google.com/file/d/1Ylqz4qb1aeRSeXPD3OrhcmydY7sscu7v/view?usp=sharing
-# Tree OCloak.jpg;https://drive.google.com/file/d/1NFi5KCWuGKwSg4D1pxFeEDRGooSiPtvL/view?usp=sharing
-# Tribal King Flag.jpg;https://drive.google.com/file/d/1CIOHnnyXUaiaHeOYkcDe7UyvkSqrzgc2/view?usp=sharing
-# Tribal King Seal.jpg;https://drive.google.com/file/d/1IigQcNaAAr5XALrcHM5Kp0ind34YnWwg/view?usp=sharing
-# Uncommander.jpg;https://drive.google.com/file/d/1bXfM444nNGUrzoBrPn13E5MD-NcXDI29/view?usp=sharing
-# Underworld Bar Gains.jpg;https://drive.google.com/file/d/17UuCkrvlqSCupaIV1jB_agmOZOIk40_w/view?usp=sharing
-# Violet Lotus Cloak.jpg;https://drive.google.com/file/d/1WbAY0Lt6uQxL-hiuu4t-6I00DEAOfVJK/view?usp=sharing
-# Walker Texas Ranger.jpg;https://drive.google.com/file/d/1zDHD89-VAZiu8DeG7YXvDlfdcds_SRnT/view?usp=sharing
-# Wandering Eye.jpg;https://drive.google.com/file/d/1Qp7Nz9y0fiYOO_Njf4zlZ76KCVwOpTVW/view?usp=sharing"""
-#
-#     for regalia in regalias.split("\n"):
-#         r = regalia.split(";")
-#         name = r[0].split(".jpg")[0]
-#         url = r[1]
-#         c.cards.append(Card(name=name, type_line="Regalia", image_url=url))
-#
-#     logging.info("Regalias imported")
-#     session.commit()
+    # cubes = session.query(Cube).all()
+    # for cube in cubes:
+      #   print(cube.id, cube.name, len(cube.cards))
+        
+    cube = session.query(Cube).filter(Cube.id == 5).first()
+    print(len(cube.cards))
+    cards = session.query(Card).filter(Card.tags == "Draft").all()
+    for card in cards:
+        cards_to_change = session.query(Card).join(CubeList).filter(CubeList.cube_id == 5, 
+                                                                    Card.name == card.name).all()
+        for c in cards_to_change:
+            c.tags = "Draft"
+    # session.commit()
+    print(session.query(Card).join(CubeList).filter(CubeList.cube_id == 5, Card.tags == "Draft").all())
+    # import_cubecobra(cube)
+    # session.commit()
+    # create_cube("yolocube test", "6075b3211e5a7210494c053d")
     
-    
+    # card = [card for card in get_cube_list(cube=c) if card.get("Name") == "Lathiel, the Bounteous Dawn"][0]
+    # c = Card(name=card["Name"],
+    #          set_code=card["Set"],
+    #          cmc=card["CMC"],
+    #          color=card["Color"],
+    #          type_line=card["Type"],
+    #          status=card["Status"],
+    #          tags=card["Tags"])
+    # add_scryfall_infos(c)
+    # cube = session.query(Cube).filter(Cube.id == 3).one()
+    # cube.cards.append(c)
+    # print(len(cube.cards))
+    # session.commit()
+    # c = session.query(Cube).filter(Cube.id == 3).one()
+    # update_cube(cube=c)

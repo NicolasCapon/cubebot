@@ -11,7 +11,8 @@ from model import session, Cube, CubeList, Game, Player, Card, Deck, DeckList, D
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity, ReplyKeyboardRemove
 from telegram.ext import Filters, CommandHandler, ConversationHandler, MessageHandler, CallbackQueryHandler
 
-class DraftHandler():
+
+class DraftHandler:
 
     def __init__(self, dispatcher):
         self.dispatcher = dispatcher
@@ -79,22 +80,13 @@ class DraftHandler():
 
         else:
             self.cube = session.query(Cube).filter(Cube.id == match).one()
+            # TODO: load here cube specific draft behaviour
             self.players = session.query(Player).all()
             reply_markup = InlineKeyboardMarkup(self.get_select_player_keyboard())
             text = f"Cube sélectionné: {self.cube.name}\nSélectionne maintenant les joueurs qui participeront :"
             query.edit_message_text(text=text,
                                     reply_markup=reply_markup)
             return SealedConv.CHOOSING
-
-    #
-    # @restrict(UserType.ADMIN)
-    # def start_select_player(self, update, context):
-    #     self.players = session.query(Player).all()
-    #     reply_markup = InlineKeyboardMarkup(self.get_select_player_keyboard(self.players, self.subscribers))
-    #     text = "Selectionne les joueurs qui participeront :"
-    #     update.message.reply_text(text=text,
-    #                               reply_markup=reply_markup)
-    #     return SealedConv.CHOOSING
         
     def choose_player(self, behaviour, *args):
         update, context = args
@@ -283,6 +275,7 @@ class DraftHandler():
                                    title=f"Ronde {round_count} Pick {pick_count}")
 
                 text, reply_markup = self.get_booster_dialogue(drafter, is_new_booster=is_new_booster)
+                sleep(0.5)
                 context.bot.send_message(chat_id=drafter.id,
                                          text=text,
                                          reply_markup=reply_markup,
@@ -320,7 +313,7 @@ class DraftHandler():
                                     parse_mode="HTML",
                                     disable_web_page_preview=False)
 
-        sleep(0.1)
+        sleep(0.5)
 
     @staticmethod
     def send_doc(chat_id, context, content, filename):

@@ -605,8 +605,8 @@ class DeckHandler:
             else:
                 num = int(num)
             try:
-                # Ameliorer avec un filtre sur le cube
-                card = session.query(Card).filter(Card.name.like(cardname + "%")).one()
+                card = session.query(Card).join(CubeList).filter(Card.name.like(cardname + "%"),
+                                                                 CubeList.cube_id == self.game.cube_id).one()
             except MultipleResultsFound:
                 errors.append((cardname, "plusieurs cartes trouvées"))
                 continue

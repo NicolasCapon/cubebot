@@ -210,7 +210,7 @@ class Deck(Base):
             db_card = session.query(Card).join(CubeList).filter(Card.name == card.get("name", ""),
                                                                 CubeList.cube_id == self.game.cube_id).first()
             if db_card:
-                self.add_card(db_card, amount=card.get("amount",1), note=card.get("comment",None))
+                self.add_card(db_card, amount=card.get("amount", 1), note=card.get("comment",None))
             else:
                 errors.append(card.get("name", ""))
         self.name = deckstats_deck["title"]
@@ -264,11 +264,13 @@ class Draft(Base):
     cube_id = Column(Integer, ForeignKey("cube.id"))
     cube = relationship("Cube")
 
-    partners = [{"name":"Krav, the Unredeemed", "partner":"Regna, the Redeemer"},
+    partners = [{"name": "Krav, the Unredeemed", "partner": "Regna, the Redeemer"},
                 {"name": "Virtus the Veiled", "partner": "Gorm the Great"},
-                {"name": "Brallin, Skyshark Rider", "partner": "Shabraz, the Skyshark"}]
+                {"name": "Brallin, Skyshark Rider", "partner": "Shabraz, the Skyshark"},
+                {"name": "Ukkima, Stalking Shadow", "partner": "Cazur, Ruthless Stalker"},
+                {"name": "Yannik, Scavenging Sentinel", "partner": "Nikara, Lair Scavenger"}]
 
-    def __init__(self, cube, round_num=6, booster_size=9, auto_pick_last_card=True):
+    def __init__(self, cube, round_num=5, booster_size=9, auto_pick_last_card=True):
         self.cube = cube
         self.boosters = []
         self.booster_size = booster_size
@@ -371,7 +373,7 @@ class Draft(Base):
         return f"<Draft(id={self.id}, turn_order={self.turn_order})>"
 
      
-class Drafter():
+class Drafter:
         
     draft = None
     
@@ -446,7 +448,7 @@ class Choice(Base):
                f"pick_count={self.pick_count})>"
             
             
-class Booster():
+class Booster:
     
     def __init__(self, id, cards, from_drafter=None):
         self.id = id

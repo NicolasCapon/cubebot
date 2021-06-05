@@ -36,6 +36,6 @@ if __name__ == "__main__":
     scan = NFC_Scanner()
     def hello(uid, ok):
         logging.info(f"test uid = [{uid}] {ok}")
-    
+
     scan.start(hello, ["test1", "test2"])
-    
+

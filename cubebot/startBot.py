@@ -14,9 +14,12 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
                     filename=config.log_file,
                     level=config.log_level)
 
+
 def main():
     # Create the EventHandler and pass it your bot's token.
-    updater = Updater(config.telegram_token, use_context=True)
+    updater = Updater(config.telegram_token,
+                      use_context=True,
+                      request_kwargs={'read_timeout': 10, 'connect_timeout': 7})
     
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
@@ -25,7 +28,7 @@ def main():
     cube_h = cubeHandler.CubeHandler(dp)
     
     # log all errors
-    dp.add_error_handler(error)
+    # dp.add_error_handler(error)
 
     # help handler
     dp.add_handler(CommandHandler("help", send_help))
@@ -38,6 +41,7 @@ def main():
     # SIGTERM or SIGABRT. This should be used most of the time, since
     # start_polling() is non-blocking and will stop the bot gracefully.
     updater.idle()
+
 
 # this is a general error handler function. If you need more information about specific type of update, add it to the
 # payload in the respective if clause
@@ -78,6 +82,7 @@ def error(update, context):
     # we raise the error again, so the logger module catches it. If you don't use the logger module, use it.
     raise
 
+
 def send_help(update, context):
     """Send commands and if admin request send additionnals admin commands"""
     text = ""
@@ -95,6 +100,7 @@ def send_help(update, context):
             "/load_deck - charger son dernier deck\n"\
             "/load_deckstats [url]- load deck from url\n"\
             "/mydeck - editer son deck\n"\
+            "/sign - signer une carte\n"\
             "Tips:\n- Pour supprimer toutes les cartes de son deck, "\
             "taper 'REMOVE ALL CARDS' dans le menu d'édition des cartes"
 
@@ -102,6 +108,8 @@ def send_help(update, context):
         context.bot.send_message(update.effective_user.id, text=text)
     else:
         context.bot.send_message(chat_id=update.effective_chat.id,
-                                 text=text)    
+                                 text=text)
+
+
 if __name__ == '__main__':        
     main()

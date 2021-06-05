@@ -4,10 +4,10 @@ import logging
 from vlc import State, Instance
 from time import sleep
 from pn532 import PN532_SPI
-        
+import config
+from model import session, CubeList, DeckList, Card, Cube
+
 def audio_scan(cube, context):
-    import config
-    from model import session, CubeList, DeckList, Card
     pn532 = PN532_SPI(debug=False, reset=20, cs=4)
     pn532.SAM_configuration()
     loop = True
@@ -42,8 +42,6 @@ def audio_scan(cube, context):
                 play_sound(s)
 
 def audio_scan_test(cube):
-    import config
-    from model import session, CubeList, DeckList, Card
     pn532 = PN532_SPI(debug=False, reset=20, cs=4)
     pn532.SAM_configuration()
     loop = True
@@ -60,10 +58,16 @@ def audio_scan_test(cube):
 
         # cubelist, decklist = session.query(CubeList).filter(CubeList.card_id == DeckList.card_id).filter(CubeList.cube_id == cube.id,
                              # CubeList.uid == uid).filter(or_(CubeList.signature != None, DeckList.note != None)).first()
-        cubelist = session.query(CubeList).filter(CubeList.cube_id == cube.id, CubeList.uid == uid).filter(CubeList.signature != None).first()
-        if cubelist.signature:
-            s = os.path.join(config.src_dir, "resources", "sounds", cubelist.signature)
-            play_sound(s)
+        cubelist, decklist= None, None
+        session.commit() # update the session in case db changed
+        result = session.query(CubeList).filter(CubeList.cube_id == cube.id, CubeList.uid == uid).first()
+        print(result)
+        if result is not None:
+            cubelist = result
+            print(session.query(Card).filter(Card.id == cubelist.card_id).first().name)
+            if cubelist.signature:
+                s = os.path.join(config.src_dir, "resources", "sounds", cubelist.signature)
+                play_sound(s)
 
 def play_sound(sound, wait_until_done=True):
     """Play various type of sound based on vlc media player
@@ -80,4 +84,5 @@ def play_sound(sound, wait_until_done=True):
     return
 
 if __name__ == "__main__":
-    pass
+    cube = session.query(Cube).first()
+    audio_scan_test(cube)

@@ -2,6 +2,7 @@
 *.log
 *.db
 *.out
+*.old
 
 # ignore venv & test folder
 bin/
