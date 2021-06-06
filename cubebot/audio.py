@@ -28,7 +28,6 @@ def audio_scan(cube, context):
         cubelist, decklist= None, None
         result = session.query(CubeList, DeckList).filter(CubeList.card_id == DeckList.card_id).filter(CubeList.cube_id == cube.id,
                              CubeList.uid == uid).first()
-        print(result)
         if result is not None:
             cubelist, decklist = result
             if decklist.note:
@@ -52,19 +51,13 @@ def audio_scan_test(cube):
         # Try again if no card is available.
         if uid is None:
             continue
-        # Check if uid is known
-        # cube, card, deck = session.query(CubeList, Card, DeckList).join(Card).join(DeckList).filter(CubeList.cube_id == cube.id,
-        #                    CubeList.uid == uid).filter(or_(CubeList.signature != None, DeckList.note != None)).first()
-
-        # cubelist, decklist = session.query(CubeList).filter(CubeList.card_id == DeckList.card_id).filter(CubeList.cube_id == cube.id,
-                             # CubeList.uid == uid).filter(or_(CubeList.signature != None, DeckList.note != None)).first()
-        cubelist, decklist= None, None
+        cubelist = None
         session.commit() # update the session in case db changed
         result = session.query(CubeList).filter(CubeList.cube_id == cube.id, CubeList.uid == uid).first()
-        print(result)
         if result is not None:
             cubelist = result
-            print(session.query(Card).filter(Card.id == cubelist.card_id).first().name)
+            cardname = session.query(Card).filter(Card.id == cubelist.card_id).first()
+            print(cubelist.signature, cardname.name)
             if cubelist.signature:
                 s = os.path.join(config.src_dir, "resources", "sounds", cubelist.signature)
                 play_sound(s)

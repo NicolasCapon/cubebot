@@ -48,7 +48,7 @@ def import_cubecobra(cube, include_maybeboard=False, from_file=False):
                  tags=card["Tags"])
         add_scryfall_infos(c)
         cube.cards.append(c)
-        
+
     logging.info("CubeCobra succesfully imported")
     return cube
 
@@ -80,8 +80,8 @@ def add_scryfall_infos(card):
                               scryfall_id = t["id"])
             # Add related token to card
             card.tokens.append(token)
-        
-    
+
+
 def import_basic_lands(cube):
     basics = ["Plains", "Island", "Swamp", "Mountain", "Forest"]
     for card in basics:
@@ -92,7 +92,7 @@ def import_basic_lands(cube):
                  type_line="Basic Land",
                  status="owned")
         cube.cards.append(c)
-    
+
     logging.info("Basic Lands succesfully imported")
 
 
@@ -106,12 +106,11 @@ def get_cube_list(cube, from_file=False):
         params = {"primary": "Color Category",
                   "secondary": "Types-Multicolor",
                   "tertiary": "CMC2"}
-        
+
         url = "https://cubecobra.com/cube/download/csv/" + cube.cubecobra_id
         logging.info(f"fetch cube list on {url}")
         response = requests.get(url)#, params=params)
         data = response.text
-    print(response.content)
     csv_reader = csv.DictReader(data.splitlines())
     return list(csv_reader)
 
@@ -134,8 +133,8 @@ def quick_scan(cube):
             # write_string_to_tag(f"https://scryfall.com/card/{card.scryfall_id}", pn532)
             session.commit()
             loop = False
-            
-    
+
+
 def scan_card_for_DB(cube):
     # TODO write gatherer link of the card to nfc chip for phone scan - ntag2xx_write_block
     # https://blog.foulquier.info/tutoriels/iot/installation-de-la-carte-nfc-pn532-sur-un-arduino-et-ecriture-d-un-message-ndef-sur-un-tag-mifare-classic
@@ -176,6 +175,7 @@ def scan_card_to_write_url(cube):
     loop = True
     logging.info("Place card on the scanner then wait before removing it")
     uids = []
+    session.commit()
     while loop:
         # Check if a card is available to read
         uid = pn532.read_passive_target(timeout=0.1)
@@ -183,7 +183,7 @@ def scan_card_to_write_url(cube):
         if uid is None:
             continue
         # Check if uid is known
-        card = session.query(Card).join(CubeList).filter(CubeList.uid == uid).first()
+        card = session.query(Card).join(CubeList).filter(CubeList.cube_id == cube.id).filter(CubeList.uid == uid).first()
         if card and not uid in uids:
             logging.info(f"{card.name} detected")
             url = "https://scryfall.com/cards/" + card.scryfall_id
@@ -215,7 +215,7 @@ def test_scan(cube):
            logging.info(c.card)
 
 
-def update_cube(cube):
+def update_cube(cube, commit=True):
     """WARNING: Only works on singleton cubes for now"""
     rss = "https://cubecobra.com/cube/rss/" + cube.cubecobra_id
     updates = feedparser.parse(rss).entries
@@ -231,10 +231,9 @@ def update_cube(cube):
             updates[i].summary = soup.div
             updates_to_proceed.append(updates[i])
         i += 1
-    
+
     logging.info(f"{len(updates_to_proceed)} update(s) found.")
     for i, u in enumerate(reversed(updates_to_proceed)):
-        # logging.info(f"------Update du {u.published_parsed} ------")
         changes = str(u.summary).split("<br/>")
         changes = tqdm(changes, total=len(changes))
         changes.set_description(f"[{i+1}/{len(updates_to_proceed)}]{u.title}")
@@ -245,21 +244,22 @@ def update_cube(cube):
                 # Update card
                 old_card_name = cards[0].string
                 new_card_name = cards[1].string
+                card_to_update = None
                 try:
                     card_to_update = session.query(CubeList).join(Card).filter(Card.name == old_card_name,
                                                                          CubeList.cube_id == cube.id).one()
                 except NoResultFound as e:
                     logging.info(f"[{old_card_name}] {e}")
-                finally:
+                if not card_to_update:
                     # some cards with "//" in their name on scryfall are without "//" on cubecobra
                     card_to_update = session.query(CubeList).join(Card).filter(Card.name.like(old_card_name+" // %"),
                                                                          CubeList.cube_id == cube.id).first()
                 if not card_to_update:
-                    text = f"[{old_card_name} // %] also not found on DB for cube {cube.id}. "\
-                            "Considere changing manually {old_card_name} → {new_card_name}"
+                    text = f"[{old_card_name}] not found on DB for cube {cube.id}. "\
+                           f"Considere changing manually {old_card_name} → {new_card_name}"
                     logging.info(text)
                     continue
-                
+
                 new_card = Card(name=new_card_name)
                 session.add(new_card)
                 session.flush()
@@ -285,14 +285,14 @@ def update_cube(cube):
                     if len(r) == 1:
                         r = r[0]
                     else:
-                        text = f"[{old_card_name} // %] also not found on DB for cube {cube.id}. "\
+                        text = f"[{old_card_name}] not found on DB for cube {cube.id}. "\
                                f"Considere deleting manually {old_card_name}"
                         logging.info(text)
                         continue
-                    
+
                 session.delete(r)
                 logging.info(f"-[{old_card_name}]")
-                    
+
         if i == len(updates_to_proceed)-1:
             # On last update, we update cards data based on csv
             # logging.info(">>>Load csv and crawl scryfall to fill missing cards data...")
@@ -314,9 +314,12 @@ def update_cube(cube):
                         card_db.tags=card["Tags"]
                         add_scryfall_infos(card_db)
                         break
-            logging.info("Update Complete")
             # Add yes no option / telegram handler
-            session.commit()
+            if commit: 
+                session.commit()
+                logging.info(f"{cube.name} updated successfully.")
+            else:
+                logging.info("Update Complete. /!\ No commit was made.")
     return len(updates_to_proceed)
 
 
@@ -433,24 +436,28 @@ if __name__ == "__main__":
                        # filename=config.log_file,
                         level=config.log_level)
 
+    cube = session.query(Cube).first()
+    # update_cube(cube=cube, commit=True)
+    scan_card_to_write_url(cube)
+
     # cubes = session.query(Cube).all()
     # for cube in cubes:
       #   print(cube.id, cube.name, len(cube.cards))
-        
-    cube = session.query(Cube).filter(Cube.id == 5).first()
-    print(len(cube.cards))
-    cards = session.query(Card).filter(Card.tags == "Draft").all()
-    for card in cards:
-        cards_to_change = session.query(Card).join(CubeList).filter(CubeList.cube_id == 5, 
-                                                                    Card.name == card.name).all()
-        for c in cards_to_change:
-            c.tags = "Draft"
+
+#    cube = session.query(Cube).filter(Cube.id == 5).first()
+#    print(len(cube.cards))
+#    cards = session.query(Card).filter(Card.tags == "Draft").all()
+#    for card in cards:
+#        cards_to_change = session.query(Card).join(CubeList).filter(CubeList.cube_id == 5,
+#                                                                    Card.name == card.name).all()
+#        for c in cards_to_change:
+#            c.tags = "Draft"
     # session.commit()
-    print(session.query(Card).join(CubeList).filter(CubeList.cube_id == 5, Card.tags == "Draft").all())
+#    print(session.query(Card).join(CubeList).filter(CubeList.cube_id == 5, Card.tags == "Draft").all())
     # import_cubecobra(cube)
     # session.commit()
     # create_cube("yolocube test", "6075b3211e5a7210494c053d")
-    
+
     # card = [card for card in get_cube_list(cube=c) if card.get("Name") == "Lathiel, the Bounteous Dawn"][0]
     # c = Card(name=card["Name"],
     #          set_code=card["Set"],
@@ -466,3 +473,4 @@ if __name__ == "__main__":
     # session.commit()
     # c = session.query(Cube).filter(Cube.id == 3).one()
     # update_cube(cube=c)
+    
